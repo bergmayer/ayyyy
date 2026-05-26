@@ -402,9 +402,12 @@ final class EditorAccessoryView: UIInputView {
         // `.default` style + an explicit background colour gives a
         // flush fit against the keyboard. `.keyboard` style adds a
         // blur material with internal padding that introduces a
-        // ~20 pt gap above the keys.
+        // ~20 pt gap above the keys. Width is 0 here — the
+        // `.flexibleWidth` autoresizing mask below stretches us to
+        // the keyboard's frame at install time, so the seed value
+        // doesn't matter.
         super.init(frame: CGRect(x: 0, y: 0,
-                                 width: UIScreen.main.bounds.width,
+                                 width: 0,
                                  height: Self.rowHeight),
                    inputViewStyle: .default)
         backgroundColor = UIColor { trait in

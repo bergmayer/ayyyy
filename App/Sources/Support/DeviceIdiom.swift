@@ -7,11 +7,25 @@ import UIKit
 /// routing via the `openDocumentDestination` preference.
 enum DeviceIdiom {
 
+    /// Captured once at first access. `UIDevice.userInterfaceIdiom`
+    /// is main-actor isolated under Swift 6 strict concurrency, but
+    /// the value is constant per device — caching it via
+    /// `MainActor.assumeIsolated` lets the rest of the codebase read
+    /// `isPhone` from any context (SwiftUI bodies, View structs,
+    /// nonisolated value types) without warnings. Call sites that
+    /// might run before any UI is up must ensure they're on the
+    /// main thread first.
+    private static let userInterfaceIdiom: UIUserInterfaceIdiom = {
+        MainActor.assumeIsolated {
+            UIDevice.current.userInterfaceIdiom
+        }
+    }()
+
     /// `true` when running on iPhone (or iPhone-sized window on a
     /// device that can host one — currently no such configuration
     /// exists, but the check stays idiom-based for clarity).
     static var isPhone: Bool {
-        UIDevice.current.userInterfaceIdiom == .phone
+        userInterfaceIdiom == .phone
     }
 
     /// `true` on iPad / Mac Catalyst / visionOS — anything that can

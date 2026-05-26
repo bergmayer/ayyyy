@@ -666,6 +666,7 @@ struct ToolbarSymbolPicker: View {
 
 /// Shared by `ToolbarSlotEditor` and `ToolbarSlotAdder`.
 @ViewBuilder
+@MainActor
 func iconPickerRow(symbol: Binding<String>, pickingSymbol: Binding<Bool>) -> some View {
     HStack(spacing: 16) {
         toolbarSymbol(symbol.wrappedValue.isEmpty ? "questionmark.square.dashed" : symbol.wrappedValue, size: 32)

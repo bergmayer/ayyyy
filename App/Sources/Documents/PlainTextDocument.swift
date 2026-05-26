@@ -265,8 +265,9 @@ final class PlainTextDocument {
             // and updates a manifest). Hop back to record the auto
             // revision; the disk write that just happened above
             // already saved the buffer to scratch, so this is the
-            // cheap part.
-            await MainActor.run {
+            // cheap part. `try?` returns `Void?`; the `_ =` discard
+            // silences MainActor.run's unused-result warning.
+            _ = await MainActor.run {
                 try? RevisionStore.shared.recordRevision(snapshot, kind: .auto, forKey: key)
             }
         }
