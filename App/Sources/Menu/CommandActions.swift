@@ -23,6 +23,26 @@ enum CommandActions {
         Self.context.scenes.openWindowAction?(.editor)
     }
 
+    /// Dev-only: snapshot every open session into the session store,
+    /// flush dirty drafts to disk, then `exit(0)`. Bypasses graceful
+    /// UIKit teardown — that's the point (force-quit simulates a real
+    /// kill so the next launch exercises the restore path).
+    static func devQuit() {
+        for openSession in Self.context.scenes.allOpenSessions {
+            guard !openSession.sceneUUID.isEmpty else { continue }
+            for tab in openSession.tabs where tab.document.isDirty {
+                if let live = tab.state.textView?.text {
+                    tab.document.text = live
+                }
+                tab.document.autoSave()
+            }
+            SessionsStore.shared.save(
+                SessionRecord(scene: openSession.sceneUUID, session: openSession)
+            )
+        }
+        exit(0)
+    }
+
     /// Every user-initiated new tab/window offers drafts recovery so
     /// an unsaved buffer isn't buried behind a fresh blank surface.
     static func newTab() {
