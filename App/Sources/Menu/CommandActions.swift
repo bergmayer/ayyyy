@@ -4,9 +4,8 @@ import FileEncoding
 import LineEnding
 import LineSort
 
-/// Free-standing menu actions, callable from both the menu bar and the
-/// command palette. All actions read the current editor via
-/// `Self.context.scenes.currentEditor`.
+/// Menu and palette actions. Both surfaces resolve the current editor
+/// through `Self.context.scenes.currentEditor`.
 @MainActor
 enum CommandActions {
 
@@ -18,26 +17,20 @@ enum CommandActions {
 
     // MARK: - Window / file commands
 
-    /// Spawn a brand-new editor scene. The freshly-opened window picks
-    /// the user's default launch behaviour (blank doc or open picker).
+    /// Spawn a new editor scene. The fresh window picks the user's
+    /// default launch behaviour.
     static func newWindow() {
         Self.context.scenes.openWindowAction?(.editor)
     }
 
-    /// Add a tab to the currently focused window's session. No-op when
-    /// no editor window is active. Also surfaces the drafts-recovery
-    /// sheet if any recoverable drafts exist — by spec, every user-
-    /// initiated new tab/window offers recovery first so an unsaved
-    /// draft isn't accidentally buried behind a fresh blank surface.
+    /// Every user-initiated new tab/window offers drafts recovery so
+    /// an unsaved buffer isn't buried behind a fresh blank surface.
     static func newTab() {
         Self.context.scenes.currentSession?.newTab()
         offerDraftsIfAvailable()
     }
 
-    /// Internal helper: show the drafts-recovery sheet on the
-    /// currently-focused scene if any drafts exist. Centralized so
-    /// every "user just opened a new surface" entry point uses the
-    /// same gate.
+    /// Shared by every "user opened a new surface" entry point.
     static func offerDraftsIfAvailable() {
         guard !DraftsStore.shared.loadAll().isEmpty else { return }
         Self.context.editing.presentedSheet = .draftsRecovery
@@ -67,17 +60,13 @@ enum CommandActions {
         }
     }
 
-    /// Presents the command palette as a sheet on the active editor
-    /// scene.
     static func presentCommandPalette() {
         Self.context.editing.presentedSheet = .commandPalette
     }
 
-    /// Opens the file browser. In window-destination mode it spawns
-    /// the dedicated browser scene (one window per pick). In tab-
-    /// destination mode it presents the browser as a sheet on the
-    /// active editor — picks add tabs to the current session, which
-    /// matches the user's "everything in this window" intent.
+    /// Window destination: one fresh browser scene per pick. Tab
+    /// destination: sheet on the active editor — picks add tabs to
+    /// the same session ("everything in this window").
     static func presentFileBrowser() {
         switch DocumentDestination.current() {
         case .window:
@@ -88,23 +77,17 @@ enum CommandActions {
         }
     }
 
-    /// "Open in New Tab…" / "Open in New Window…" menu entries — set
-    /// a one-shot destination override so this open flow ignores the
-    /// persistent preference, then routes through the standard
-    /// presenter. The override is cleared by `EditorScene.route(open:)`
-    /// once the picked URL has landed.
+    /// One-shot destination override for "Open in New Tab…" /
+    /// "Open in New Window…". Cleared by `EditorScene.route(open:)`
+    /// once the picked URL lands.
     static func presentFileBrowser(forceDestination destination: DocumentDestination) {
         Self.context.pending.nextOpenDestinationOverride = destination
         presentFileBrowser()
     }
 
-    /// "Open in New Tab…" — spawn a fresh tab whose content IS the
-    /// file browser (UIDocumentBrowserViewController inline). When
-    /// the user picks a file, EditorScene's tab-browser pick handler
-    /// transitions that same tab back to `.editor` with the URL
-    /// loaded, so the browser never takes over the whole window.
-    /// Falls back to the legacy sheet path if no session is mounted
-    /// (cold-start race).
+    /// Inline browser tab — UIDocumentBrowserViewController hosted
+    /// inside the tab. The pick handler flips kind back to `.editor`
+    /// and loads the URL into the same tab.
     static func presentFileBrowserInNewTab() {
         guard let session = Self.session else {
             presentFileBrowser(forceDestination: .tab)
@@ -119,9 +102,9 @@ enum CommandActions {
 
     // MARK: - Undo / Redo
 
-    /// Undo on the focused editor. EditorActions itself doesn't surface
-    /// `undoManager`, but the only conformer is a UITextView subclass
-    /// (EditorEngine.TextView), so a UIResponder cast is safe.
+    /// `EditorActions` doesn't surface `undoManager`, but the sole
+    /// conformer is a UITextView subclass, so a UIResponder cast is
+    /// safe.
     static func undo() {
         (actions as? UIResponder)?.undoManager?.undo()
     }
@@ -132,10 +115,8 @@ enum CommandActions {
 
     // MARK: - Tabs
 
-    /// Toggle the inline tab switcher on the focused scene. EditorScene
-    /// observes `tabSwitcherActive` and runs the matchedGeometry morph
-    /// (active editor shrinks into its grid card). ⇧⌘\\ from menu also
-    /// hits this — second press dismisses, matching Safari.
+    /// EditorScene observes `tabSwitcherActive` and runs the
+    /// matchedGeometry morph. Second press dismisses (Safari parity).
     static func showTabSwitcher() {
         withAnimation(.appSwitcherMorph) {
             Self.context.editing.tabSwitcherActive.toggle()
@@ -144,11 +125,9 @@ enum CommandActions {
 
     // MARK: - Same-file new window (split-view surrogate)
 
-    /// Open the active document in a new window for side-by-side
-    /// editing. Same URL, two scenes — iPad-native alternative to a
-    /// true split view (which would need engine-side shared text
-    /// storage). Untitled buffers are no-ops since there's no URL to
-    /// reload from.
+    /// iPad-native side-by-side: same URL, two scenes. A true split
+    /// would need engine-side shared text storage. Untitled buffers
+    /// are no-ops — no URL to reload from.
     static func openCurrentDocumentInNewWindow() {
         guard let url = Self.context.scenes.currentEditor?.fileURL else { return }
         Self.context.pending.newWindow = url
@@ -157,17 +136,10 @@ enum CommandActions {
 
     // MARK: - Sidebar
 
-    /// Toggle the per-window navigation sidebar (outline of markdown
-    /// Compatibility shim — older code paths called `toggleSidebar`
-    /// directly. Routed through `showOutline()` so there's only one
-    /// implementation. Safe to delete once no callers remain.
+    /// Compat shim — older callers used `toggleSidebar`; the sidebar
+    /// IS the outline panel, so the user-facing name is Show Outline.
     static func toggleSidebar() { showOutline() }
 
-    /// Toggle the outline sidebar (markdown headings + tree-sitter
-    /// symbols). The sidebar IS the outline panel, so "Show Outline"
-    /// is the single user-facing name for this — previously there
-    /// were two near-identical menu items ("Show Sidebar" + "Show
-    /// Outline"), which surfaced the same panel and confused users.
     static func showOutline() {
         guard let state = Self.state else { return }
         withAnimation(.appSnappyPanel) {
@@ -175,11 +147,8 @@ enum CommandActions {
         }
     }
 
-    /// Toggle the trailing file-information inspector panel.
-    /// Flips `state.inspectorOpen`, which `EditorView`'s `.inspector`
-    /// modifier observes — both the menu (View ▸ Show File
-    /// Information) and the status-bar ⓘ button share this same
-    /// per-tab flag.
+    /// `state.inspectorOpen` is the shared per-tab flag — menu and
+    /// the status-bar ⓘ both write it.
     static func toggleInspector() {
         guard let state = Self.state else { return }
         state.inspectorOpen.toggle()
@@ -187,17 +156,10 @@ enum CommandActions {
 
     // MARK: - Split editor view
 
-    /// Toggle the split-view pane for the active tab. Two text
-    /// views render side-by-side over the same document — each with
-    /// its own cursor / scroll / selection — so the user can compare
-    /// two regions of one file without opening it in a second window.
-    /// Starts at a 50/50 split; the divider is draggable.
-    /// One-command rotation through the three split states:
-    /// off → horizontal → vertical → off. Surfaced as a single button
-    /// in the editor bar so the user doesn't have to think about
-    /// "toggle on" + "toggle orientation" as two separate concepts.
-    /// Resets the divider to 50/50 on every state change so a
-    /// width→height aspect flip doesn't leave a sliver pane.
+    /// One button for the three states (off → horizontal → vertical
+    /// → off) so the user doesn't juggle "toggle on" + "toggle
+    /// orientation" separately. Resets to 50/50 on each change so a
+    /// width↔height flip can't leave a sliver pane.
     static func cycleSplitView() {
         guard let state = Self.state else { return }
         withAnimation(.appSnappyPanel) {
@@ -214,55 +176,37 @@ enum CommandActions {
         }
     }
 
-    /// Read the active editor's split state for icon / accessibility
-    /// labelling on the cycle button. Returns nil when there's no
-    /// active editor (menu/palette won't surface the button then).
+    /// Used for the cycle button's icon / accessibility label.
     static func currentSplitState() -> (open: Bool, orientation: SplitOrientation)? {
         guard let state = Self.state else { return nil }
         return (state.splitOpen, state.splitOrientation)
     }
 
     // MARK: - Fold Selection
-    //
-    // "Hide Lines" was NPP-style line concealment. Users found that
-    // confusing — folding implies a structural marker and the
-    // language gutter only shows fold widgets at auto-detected
-    // points. "Fold Selection" gives users explicit folding over a
-    // chosen range without overloading "hide", and the effect is
-    // identical to language folding (toggle via Unfold All).
 
-    /// Fold every line touched by the selection (or the current line
-    /// if empty). Same engine call as language folding — just driven
-    /// by the user's selection instead of a tree-sitter fold marker.
+    /// Folds every line touched by the selection (or the current line
+    /// when empty). Same engine call as language folding, driven by
+    /// the user's selection instead of a tree-sitter marker.
     static func foldSelection() {
         guard let textView = actions else { return }
         let nsText = textView.text as NSString
         let selection = textView.selectedRange
         let block = nsText.lineRange(for: selection)
-        // Convert character range → 0-based line index range in one
-        // pass. The old implementation called `lineNumber(forCharacterAt:)`
-        // twice, each rescanning from offset 0 — O(N²) on large docs
-        // where Fold Selection should be cheap.
+        // One pass for both endpoints — `lineNumber(forCharacterAt:)`
+        // rescans from 0 each call, so two endpoints cost O(N²).
         let endChar = max(block.location, block.location + block.length - 1)
         let lines = lineNumbers(forCharactersAt: [block.location, endChar], in: nsText)
         guard lines.count == 2, lines[0] <= lines[1] else { return }
         let body = lines[0]...lines[1]
         textView.setLinesFolded(true, range: body)
-        // Record so `Coordinator.refreshFoldableRegions` re-emits a
-        // FoldableRegion at the line above — the engine then paints
-        // its native gutter indicator (theme-aware, properly inside
-        // the gutter) instead of relying on our prior custom overlay.
+        // Record so `refreshFoldableRegions` emits a FoldableRegion
+        // at the header above — engine then paints its native,
+        // theme-aware gutter chevron.
         state?.userFoldedBodyRanges.insert(body)
     }
 
-    // (showAllHiddenLines removed — Unfold All in the Folding
-    // submenu handles it.)
-
-    /// One-pass line-index lookup for an arbitrary set of character
-    /// offsets. Output order matches input order. The previous
-    /// per-offset helper re-walked the buffer from 0 each call,
-    /// so callers that needed two offsets paid O(N²); this collapses
-    /// them to O(N + k log k) where k = offset count.
+    /// O(N + k log k) for k offsets; the prior per-offset helper
+    /// rescanned from 0 each call.
     private static func lineNumbers(forCharactersAt offsets: [Int],
                                      in nsText: NSString) -> [Int] {
         let sorted = offsets.enumerated().sorted { $0.element < $1.element }
@@ -285,12 +229,9 @@ enum CommandActions {
         return results
     }
 
-    /// "Move Tab to New Window" — detach `tabID` from its current
-    /// session and request a fresh editor scene that will adopt it
-    /// (via `Self.context.pending.adoptedTab`) in place of its
-    /// default blank tab. `toNewWindow:` is currently the only mode;
-    /// the parameter exists so a future "Move to Other Window"
-    /// picker can reuse the same entry point.
+    /// Detaches the tab and lands it in a fresh editor scene via
+    /// `pending.adoptedTab`. `toNewWindow:` is the only mode today;
+    /// the parameter leaves room for a "Move to Other Window" picker.
     static func moveTab(_ tabID: UUID, toNewWindow: Bool) {
         guard DeviceIdiom.supportsMultipleWindows,
               let source = Self.context.scenes.session(containing: tabID),
@@ -302,12 +243,10 @@ enum CommandActions {
         Self.context.scenes.openWindowAction?(.editor)
     }
 
-    /// Safari ⌘W parity: close the active tab if there's more than
-    /// one; otherwise close the foreground window scene. Dirty tabs
-    /// route through `requestCloseTab` first so the user sees the
-    /// unsaved-changes confirmation; the confirm handlers then
-    /// detect the "session has 0 closable tabs left" case and tear
-    /// down the window after Discard / Save resolves.
+    /// Safari ⌘W parity: close the tab if there's more than one,
+    /// else close the window. Dirty buffers always route through the
+    /// confirm dialog; its handlers tear the window down when the
+    /// last tab resolves.
     static func closeActiveTab() {
         guard let session = Self.session,
               let tab = session.tabs.first(where: { $0.id == session.selectedTabID }) else { return }
@@ -315,11 +254,9 @@ enum CommandActions {
             requestCloseTab(session.selectedTabID, in: session)
             return
         }
-        // Last tab in the window. Dirty buffer → show the same
-        // confirm dialog and let the resolve path destroy the
-        // window. Clean buffer → close the window immediately on
-        // multi-window devices; on iPhone there's nothing to
-        // destroy (single-window) so swallow ⌘W.
+        // Last tab: dirty → confirm dialog (resolve handler tears
+        // the window down); clean → close immediately on iPad,
+        // swallow ⌘W on iPhone (single-window).
         if shouldWarnBeforeClose(tab) {
             requestCloseTab(session.selectedTabID, in: session)
             return
@@ -327,10 +264,8 @@ enum CommandActions {
         destroyForegroundWindowScene()
     }
 
-    /// Resolve the foreground scene from UIApplication's connected
-    /// list and ask the system to tear it down. iPad / multi-window
-    /// device only — on iPhone there's only one scene and the
-    /// request is a no-op.
+    /// iPad-only; iPhone has one scene and the system request is a
+    /// no-op there.
     static func destroyForegroundWindowScene() {
         guard let scene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) else { return }
         UIApplication.shared.requestSceneSessionDestruction(
@@ -340,12 +275,8 @@ enum CommandActions {
         )
     }
 
-    /// Public entry point for "the user asked to close this tab."
-    /// Routes through a confirmation dialog when the tab has unsaved
-    /// content; closes directly otherwise. Use this instead of
-    /// `session.closeTab(_:)` from any UI surface (tab pill ×,
-    /// switcher swipe-to-close, context menu, ⌘W) so the warning
-    /// fires uniformly.
+    /// Single entry point so every UI surface (pill ×, swipe-to-
+    /// close, context menu, ⌘W) gets the same unsaved-changes warning.
     static func requestCloseTab(_ tabID: UUID, in session: EditorSession) {
         guard let tab = session.tabs.first(where: { $0.id == tabID }) else { return }
         if shouldWarnBeforeClose(tab) {
@@ -360,12 +291,9 @@ enum CommandActions {
         }
     }
 
-    /// Discard-and-close confirmed by the user. Bypasses the warning
-    /// and uses `.discard` disposition so the buffer is NOT archived
-    /// to ClosedTabsStore — a deliberate throw-away must not be
-    /// resurrectable via ⇧⌘T. Also drops the per-doc scratch shadow
-    /// so abandoned bytes don't sit alongside the source file. If
-    /// this was the last tab, tear down the window scene.
+    /// `.discard` disposition so the buffer is NOT archived to
+    /// ClosedTabsStore — a deliberate throw-away mustn't be
+    /// resurrectable via ⇧⌘T. Drops the scratch shadow too.
     static func confirmDiscardAndClose(_ pending: PendingClose) {
         defer { Self.context.editing.pendingClose = nil }
         guard let (session, tab) = Self.resolveSession(for: pending) else { return }
@@ -375,22 +303,15 @@ enum CommandActions {
         if wasLastTab { destroyForegroundWindowScene() }
     }
 
-    /// User picked Save & Close in the unsaved-changes dialog. For
-    /// URL-backed docs this saves to disk then closes; for untitled
-    /// docs it routes to Save As (tab stays open until the user picks
-    /// a location). If the save itself fails (encoding error, disk
-    /// full, expired security-scoped resource), surface the error
-    /// and KEEP the tab open — closing would silently destroy the
-    /// buffer.
+    /// URL-backed: save then close. Untitled: route to Save As, tab
+    /// stays open. On save failure: surface the error and KEEP the
+    /// tab — closing would silently destroy the buffer.
     static func confirmSaveAndClose(_ pending: PendingClose) {
         guard let (session, tab) = Self.resolveSession(for: pending) else {
             Self.context.editing.pendingClose = nil
             return
         }
         guard tab.document.fileURL != nil else {
-            // Untitled — route to Save As. The tab stays open; the
-            // user picks a location, the save flow runs, and they
-            // can re-trigger close afterwards.
             Self.context.pickers.pending = .saveAs
             Self.context.editing.pendingClose = nil
             return
@@ -400,7 +321,6 @@ enum CommandActions {
         } catch {
             Self.context.editing.openErrorMessage =
                 "Couldn't save \(pending.displayName): \(error.localizedDescription)"
-            // Keep the tab open so the user can retry / Save As.
             Self.context.editing.pendingClose = nil
             return
         }
@@ -414,10 +334,8 @@ enum CommandActions {
         Self.context.editing.pendingClose = nil
     }
 
-    /// Look up the (session, tab) pair referenced by a PendingClose.
-    /// Both `confirmSaveAndClose` and `confirmDiscardAndClose` need
-    /// it; centralizing kills the matching pyramid and ensures both
-    /// paths reach the same definition of "the targeted tab."
+    /// Shared by save / discard handlers so both reach the same
+    /// definition of "the targeted tab."
     private static func resolveSession(for pending: PendingClose) -> (EditorSession, TabModel)? {
         let sessions = Self.context.scenes.allOpenSessions
         guard let session = sessions.first(where: { ObjectIdentifier($0) == pending.sessionID }),
@@ -426,16 +344,13 @@ enum CommandActions {
         return (session, tab)
     }
 
-    /// Warning gate: untitled buffers with any content, or saved
-    /// files with unsaved edits, get a confirmation. Empty untitled
-    /// scratches close silently — losing zero bytes isn't worth a
-    /// dialog.
+    /// Untitled-with-content or URL-backed-and-dirty triggers the
+    /// dialog. Empty untitled scratches close silently — losing zero
+    /// bytes isn't worth a confirmation.
     private static func shouldWarnBeforeClose(_ tab: TabModel) -> Bool {
-        // `document.text` is a 300 ms-debounced snapshot. A user who
-        // types a single character into an untitled window and then
-        // immediately hits ⌘W (or the tab's ×) would otherwise sail
-        // past the warning because the debounce hadn't fired yet.
-        // Pull the engine's live buffer when it's reachable.
+        // Pull the engine's live buffer — `document.text` is a 300 ms
+        // snapshot and a one-character untitled buffer + immediate
+        // ⌘W would otherwise sail past the warning.
         let liveText = tab.state.textView?.text ?? tab.document.text
         if tab.document.fileURL == nil {
             return !liveText.isEmpty
@@ -443,37 +358,22 @@ enum CommandActions {
         return tab.document.isDirty
     }
 
-    /// Public peek at the same predicate — used by UI surfaces (tab
-    /// switcher, palette) that need to know whether closing will
-    /// pop a confirmation, so they can dismiss themselves first.
-    /// iOS only hosts one modal per scene; presenting the dialog
-    /// from under another sheet would either silently drop it (data
-    /// loss) or wedge the app.
+    /// Public peek — sheet-hosting UI (switcher, palette) checks
+    /// this so it can dismiss itself before the dialog. iOS hosts
+    /// one modal per scene; presenting under another sheet drops
+    /// the dialog silently or wedges the app.
     static func tabNeedsCloseConfirmation(_ tab: TabModel) -> Bool {
         shouldWarnBeforeClose(tab)
     }
 
-    /// "Duplicate File" — spawn a new untitled tab in the current
-    /// session whose buffer is a copy of the active tab's text.
-    /// Useful for branching from a known state without touching the
-    /// original. The duplicate starts dirty so the user is reminded
-    /// it isn't saved anywhere.
-    /// Open a recovered draft from the launch-time
-    /// `DraftsRecoverySheet`. Two paths:
-    ///
-    ///   - **URL-backed draft** (metadata has a source bookmark):
-    ///     resolve the bookmark, set `fileURL` so the tab is tied
-    ///     to the original location, then apply the drafted text
-    ///     on top (marking dirty so the user knows the on-disk
-    ///     file still holds the pre-edit bytes). `savedBaselineText`
-    ///     is seeded with the file's current on-disk content so the
-    ///     change-history gutter highlights *only* the unsaved
-    ///     edits vs. the file on disk.
-    ///   - **Untitled draft** (no metadata): open as a fresh
-    ///     Untitled tab with the bytes loaded. `fileURL` stays nil
-    ///     so the title shows "edited"; `draftURL` is inherited so
-    ///     subsequent autosaves overwrite the SAME on-disk draft
-    ///     file rather than orphaning the old one.
+    /// Two paths off the recovery sheet:
+    ///   - URL-backed (metadata.sourceBookmark): re-attach the URL,
+    ///     apply drafted text on top (dirty), seed baseline with the
+    ///     on-disk content so the gutter highlights only the unsaved
+    ///     deltas.
+    ///   - Untitled: bytes load into a fresh Untitled tab; `draftURL`
+    ///     is inherited so the next autosave overwrites the same file
+    ///     instead of orphaning the old one.
     static func recoverDraft(_ draft: DraftRecord) {
         guard let session = Self.session else { return }
         let text = (try? String(contentsOf: draft.url, encoding: .utf8))
@@ -487,9 +387,6 @@ enum CommandActions {
 
         if let bookmark = draft.metadata?.sourceBookmark,
            let resolved = resolveBookmark(bookmark) {
-            // URL-backed: re-attach the source, seed baseline with
-            // the file's on-disk content (so unsaved deltas show
-            // in the gutter), and inherit the saved encoding.
             tab.document.fileURL = resolved.url
             tab.state.fileURL = resolved.url
             tab.state.languageIdentifier = LanguageRegistry.identifier(for: resolved.url)
@@ -498,29 +395,25 @@ enum CommandActions {
                 tab.document.fileEncoding = FileEncoding(encoding: encoding)
                 tab.state.fileEncoding = tab.document.fileEncoding
             }
-            // Pull the current on-disk text for the diff baseline.
-            // Best-effort: if the file is unreadable (perm flip,
-            // user deleted it), fall back to "" so every line in
-            // the recovered draft shows as added.
+            // Best-effort baseline: if the file is unreadable (perm
+            // flip, deleted), fall back to "" so every recovered
+            // line shows as added.
             let onDisk = (try? String(contentsOf: resolved.url, encoding: .utf8))
                 ?? (try? String(contentsOf: resolved.url, encoding: .isoLatin1))
                 ?? ""
             tab.state.savedBaselineText = onDisk
             if resolved.isStale {
-                // Refresh the bookmark on next autosave — the
-                // resolved URL may no longer match what was
-                // bookmarked (file moved, provider re-indexed).
+                // Bookmark may no longer match (file moved, provider
+                // re-indexed) — refresh on next autosave.
                 tab.document.draftURL = draft.url
             }
         } else {
-            // Untitled draft: fresh tab, no associated URL.
             tab.state.savedBaselineText = ""
         }
     }
 
-    /// Resolve a security-scoped bookmark to a usable URL. Returns
-    /// `nil` if the file no longer exists or the bookmark is
-    /// unresolvable.
+    /// `nil` when the file no longer exists or the bookmark won't
+    /// resolve.
     private static func resolveBookmark(_ data: Data) -> (url: URL, isStale: Bool)? {
         var stale = false
         guard let url = try? URL(
@@ -535,9 +428,8 @@ enum CommandActions {
     static func duplicateCurrentTab() {
         guard let session = Self.session else { return }
         let source = session.activeTab
-        // Pull live text from the engine first — `document.text` is
-        // a 300 ms-debounced snapshot, so a Duplicate fired right
-        // after typing would otherwise copy stale bytes.
+        // Pull engine-live text — `document.text` lags by 300 ms and
+        // a Duplicate right after typing would copy stale bytes.
         let snapshot = source.state.textView?.text ?? source.document.text
         let language = source.state.languageIdentifier
         let encoding = source.document.fileEncoding
@@ -553,10 +445,8 @@ enum CommandActions {
         tab.state.lineEnding = lineEnding
     }
 
-    /// Inline rename invoked by tapping the title bar. `newName` is
-    /// the user's typed text; we preserve the original file extension
-    /// unless the user typed one explicitly. Renames the file on
-    /// disk and updates both `document.fileURL` and `state.fileURL`
+    /// Preserves the original extension unless the user typed one
+    /// explicitly. Renames on disk and updates both `fileURL` mirrors
     /// so the rest of the app picks up the new path immediately.
     static func renameCurrentFile(to newName: String) {
         guard let session = Self.session else { return }
@@ -565,9 +455,8 @@ enum CommandActions {
         guard let oldURL = document.fileURL else { return }
         let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        // Preserve the original extension unless the user typed
-        // a dot in the new name (in which case they're explicitly
-        // overriding it).
+        // Typed dot = explicit override; otherwise inherit the old
+        // extension.
         let finalName: String
         if trimmed.contains(".") {
             finalName = trimmed
@@ -690,26 +579,22 @@ enum CommandActions {
 
     // MARK: - Find
 
-    /// Native UIKit find bar — UIFindInteraction's incremental
-    /// search with live match highlighting and a match count.
-    /// Lighter than the full Find/Replace sheet; routed to ⌥⌘F so
-    /// ⌘F can stay on the more powerful sheet.
+    /// Lighter than the full Find/Replace sheet — UIFindInteraction's
+    /// incremental search with live match count. ⌥⌘F leaves ⌘F for
+    /// the richer sheet.
     static func presentSystemFindBar() {
         actions?.presentFindNavigator()
     }
 
-    /// Opens the unified find / replace / query-replace sheet. The
-    /// selection-seed is split into its own method so menu actions
-    /// that route the sheet through `@FocusedValue` can seed first,
-    /// then present via the focused-scene presenter.
+    /// `seedFindFromSelection` is split out so menu actions can seed
+    /// before routing the sheet through `@FocusedValue`.
     static func presentFindNavigator() {
         seedFindFromSelection()
         presentSheet(.findReplace)
     }
 
-    /// Copies a single-line selection into the find query field. No-op
-    /// for empty / multi-line selections so we don't blow away the
-    /// user's current search string for a stray double-tap.
+    /// No-op for empty / multi-line selections so a stray double-tap
+    /// can't blow away the user's current search string.
     static func seedFindFromSelection() {
         guard let textView = actions,
               textView.selectedRange.length > 0,
@@ -719,12 +604,10 @@ enum CommandActions {
         Self.context.find.context.query = selected
     }
 
-    /// Recursive search across a folder, the open tabs, or every
-    /// editor window. iPad presents it as its own scene so it stays
-    /// on screen while the user clicks results; iPhone presents as
-    /// a sheet on the active editor. `requestOpenWindow` is always
-    /// called so the scene's onAppear restore-guard passes uniformly
-    /// in either path.
+    /// iPad: its own scene so it stays on-screen while the user
+    /// clicks results. iPhone: a sheet on the active editor. The
+    /// `requestOpenWindow` call lets either path pass the scene's
+    /// onAppear restore guard.
     static func presentMultiFileSearch() {
         Self.context.scenes.requestOpenWindow(.multiFileSearch)
         if DeviceIdiom.isPhone {
@@ -734,9 +617,8 @@ enum CommandActions {
         }
     }
 
-    /// Steps the cursor to the next match using the persistent search
-    /// context. Works whether or not the find sheet is open — keeps ⌘G
-    /// useful after dismissing the sheet.
+    /// Uses the persistent search context — ⌘G keeps working after
+    /// the sheet is dismissed.
     static func findNext() {
         stepToMatch(forward: true)
     }
@@ -754,8 +636,8 @@ enum CommandActions {
         recordPositionIfJumped()
     }
 
-    /// Jumps to the first match in the document, ignoring the cursor's
-    /// position. Wrap-around equivalent without confusion.
+    /// Ignores cursor position; equivalent to wrap-around without
+    /// the "did it wrap?" ambiguity.
     static func findFirst() {
         guard let textView = actions else { return }
         let ctx = Self.context.find.context
@@ -782,9 +664,8 @@ enum CommandActions {
         replaceAll(inRange: NSRange(location: cursor, length: length - cursor))
     }
 
-    /// Shared implementation for "replace all within a fixed range".
-    /// Used by Replace All in Selection and Replace to End so they share
-    /// regex handling, case-sensitivity, and undo grouping.
+    /// Shared by Replace All in Selection / Replace to End so both
+    /// reach the same regex / case / undo handling.
     private static func replaceAll(inRange range: NSRange?) {
         guard let textView = actions, let range, range.length > 0 else { return }
         guard let original = textView.text(in: range) else { return }
@@ -900,17 +781,13 @@ enum CommandActions {
 
     // MARK: - Markdown formatting
 
-    /// Wrap the selection with `**…**` (or insert empty paired markers
-    /// at the cursor). ⌘B in the Markdown menu.
     static func markdownBold()    { markdownSurround(open: "**", close: "**") }
     static func markdownItalic()  { markdownSurround(open: "*",  close: "*")  }
     static func markdownCode()    { markdownSurround(open: "`",  close: "`")  }
     static func markdownStrike()  { markdownSurround(open: "~~", close: "~~") }
 
-    /// Prefix every selected line with the corresponding `#` block —
-    /// `markdownHeader(1)` writes `# ` etc. Re-running on an existing
-    /// heading just stacks another marker on (intentional; users
-    /// who want to demote rerun the action). Levels 1–6.
+    /// Re-running stacks markers — users who want to demote re-run
+    /// the action. Levels 1–6.
     static func markdownHeader(level: Int) {
         let clamped = max(1, min(6, level))
         let marker = String(repeating: "#", count: clamped) + " "
@@ -921,8 +798,7 @@ enum CommandActions {
         applyLinePrefix { _ in "> " }
     }
 
-    /// Insert a horizontal rule (`---`) on its own line. If the cursor
-    /// is mid-line, we insert a newline first so the rule lives alone.
+    /// Inserts a newline first if mid-line so `---` lives on its own.
     static func markdownHorizontalRule() {
         guard let textView = actions else { return }
         let nsText = textView.text as NSString
@@ -946,9 +822,8 @@ enum CommandActions {
         commitTextChange()
     }
 
-    /// Insert `[text](url)` around the selection. When nothing is
-    /// selected, the cursor lands inside the empty `[]` so the user
-    /// types the link text first.
+    /// Empty selection: cursor lands inside `[]` for the link text.
+    /// With selection: selection becomes the text, `url` is highlighted.
     static func markdownLink() {
         guard let textView = actions else { return }
         let range = textView.selectedRange
@@ -966,9 +841,7 @@ enum CommandActions {
         commitTextChange()
     }
 
-    /// Insert `![alt](url)` around the selection. Empty: cursor lands
-    /// on `alt`. With selection: selection becomes alt text and `url`
-    /// is highlighted.
+    /// Mirrors `markdownLink` with `![alt](url)`.
     static func markdownImage() {
         guard let textView = actions else { return }
         let range = textView.selectedRange
@@ -985,16 +858,13 @@ enum CommandActions {
         commitTextChange()
     }
 
-    /// Open the "Insert Markdown Table" sheet.
     static func presentMarkdownTable() {
         presentSheet(.markdownTable)
     }
 
-    /// Show the Markdown Preview for the current document. iPad and
-    /// other multi-window devices get a real new scene (Stage Manager
-    /// — friendly, can sit side-by-side with the editor). iPhone is
-    /// single-window, so it gets a dismissable sheet on the current
-    /// editor — opening a new scene there is a silent no-op.
+    /// iPad gets a real scene (Stage Manager-friendly, side-by-side
+    /// with the editor). iPhone is single-window so it gets a sheet
+    /// — opening a new scene there would silently no-op.
     static func presentMarkdownPreview() {
         if DeviceIdiom.supportsMultipleWindows {
             Self.context.scenes.requestOpenWindow(.markdownPreview)
@@ -1004,27 +874,21 @@ enum CommandActions {
         }
     }
 
-    /// Run a JavaScript transform slot by 1-based id. Looks up the
-    /// slot in the shared store; no-op if the slot is empty or the
-    /// id is out of range. Errors from inside the script surface via
-    /// the standard error alert.
+    /// No-op when the slot is empty or out of range. Script errors
+    /// surface via the standard error alert.
     static func runJSTransform(slotID: Int) {
         guard let slot = JSTransformStore.shared.slot(id: slotID) else { return }
         JSTransformRunner.run(slot)
     }
 
-    /// Insert a footnote reference (`[^N]`) at the cursor and append
-    /// the matching `[^N]: ` definition at the end of the document.
-    /// `N` is the smallest unused integer footnote id in the buffer.
-    /// Cursor lands at the end of the definition so the user can type
-    /// the footnote body immediately.
+    /// `N` is the smallest unused integer in the buffer. Cursor
+    /// lands at the end of the `[^N]: ` definition so the user can
+    /// type the body immediately.
     static func markdownFootnote() {
         guard let textView = actions else { return }
         let nsText = textView.text as NSString
         let lineEnding = state?.lineEnding.string ?? "\n"
 
-        // Find the smallest unused integer id by scanning `[^N]`
-        // references already in the buffer.
         var used = Set<Int>()
         if let pattern = try? NSRegularExpression(pattern: #"\[\^(\d+)\]"#) {
             let matches = pattern.matches(in: textView.text,
@@ -1041,9 +905,8 @@ enum CommandActions {
         let ref = "[^\(nextId)]"
         let cursor = textView.selectedRange
         textView.replace(cursor, withText: ref)
-        // Build the definition; pad with newlines if the doc doesn't
-        // already end on a fresh line, so the footnote sits at the
-        // file's footer rather than wedged into the last paragraph.
+        // Pad to a fresh line so the definition lands at the footer,
+        // not wedged into the last paragraph.
         let textNow = textView.text as NSString
         let endsWithNL = textNow.length > 0 && textNow.substring(from: textNow.length - 1) == lineEnding
         let prefix = endsWithNL ? lineEnding : lineEnding + lineEnding
@@ -1106,10 +969,9 @@ enum CommandActions {
         commitTextChange()
     }
 
-    /// Strips footnote definition lines (`[^id]: body…`) from the
-    /// input. Continuation lines indented by 4 spaces or a tab join
-    /// their definition. Returns the cleaned body plus the
-    /// definitions in source order.
+    /// Continuation lines (indented by 4 spaces or a tab) attach to
+    /// their definition. Returns the cleaned body + definitions in
+    /// source order.
     private static func extractFootnoteDefinitions(from text: String) -> (body: String, defs: [(id: String, content: String)]) {
         let lines = text.components(separatedBy: "\n")
         var keep: [String] = []
@@ -1145,8 +1007,7 @@ enum CommandActions {
         return (id, body)
     }
 
-    /// Footnote reference ids (`[^id]`) in source order, allowing
-    /// duplicates so the caller can decide whether to dedupe.
+    /// In source order, duplicates kept — dedupe is the caller's call.
     private static func footnoteReferenceOrder(in body: String) -> [String] {
         guard let regex = try? NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#) else { return [] }
         let ns = body as NSString
@@ -1154,11 +1015,9 @@ enum CommandActions {
         return matches.map { ns.substring(with: $0.range(at: 1)) }
     }
 
-    /// Rewrites every `[^oldID]` in `text` to `[^newID]` using the
-    /// remap. Ids missing from the remap are left untouched. Skips
-    /// any match whose NSRange can't be converted back to a Swift
-    /// Range in the in-flight mutated string — better to drop one
-    /// rewrite than to crash on a surrogate-pair / BOM edge case.
+    /// Ids missing from the remap pass through. Skips any match
+    /// whose NSRange can't bridge back to a Swift Range — better
+    /// to drop one rewrite than crash on a surrogate-pair edge case.
     private static func applyFootnoteRemap(_ remap: [String: String], to text: String) -> String {
         guard let regex = try? NSRegularExpression(pattern: #"\[\^([^\]]+)\]"#) else { return text }
         let ns = text as NSString
@@ -1173,10 +1032,9 @@ enum CommandActions {
         return result
     }
 
-    /// Walks `body` paragraph-by-paragraph (split on blank lines).
-    /// For each paragraph, finds new footnote ids referenced and
-    /// inserts the matching definitions after it. IDs already placed
-    /// in a prior paragraph are skipped to avoid duplicate defs.
+    /// Inserts each definition after the paragraph that first
+    /// references it; duplicate refs across later paragraphs don't
+    /// re-emit the definition.
     private static func placeFootnotesAfterParagraphs(body: String, defs: [String: String]) -> String {
         let paragraphs = body.components(separatedBy: "\n\n")
         var placed = Set<String>()
@@ -1197,9 +1055,8 @@ enum CommandActions {
         return output.joined(separator: "\n\n")
     }
 
-    // Shared wrap helper for the **bold** / *italic* / `code` / ~~strike~~
-    // family. Selection-aware: empty selection drops the cursor between
-    // the markers so the user can type the wrapped content directly.
+    // Empty selection: cursor lands between the markers so the user
+    // types the content directly.
     private static func markdownSurround(open: String, close: String) {
         guard let textView = actions else { return }
         let range = textView.selectedRange
@@ -1219,31 +1076,22 @@ enum CommandActions {
 
     // MARK: - Markdown list conversion
 
-    /// Prefix every line touched by the selection (or just the cursor's
-    /// line, if the selection is empty) with `- `. Always applies the
-    /// prefix — this is a "convert to list" action, distinct from the
-    /// toggle behaviour the keyboard accessory bar uses.
+    /// Always applies — distinct from the accessory bar's toggle.
     static func convertToBulletListDash() {
         applyLinePrefix { _ in "- " }
     }
 
-    /// Same as the dash variant but uses `*` — common Markdown
-    /// convention for emphasized lists.
     static func convertToBulletListStar() {
         applyLinePrefix { _ in "* " }
     }
 
-    /// Number each line sequentially: `1. ` on the first line of the
-    /// selection, `2. ` on the second, and so on. Numbering is based
-    /// on the line's position within the selection, not the file —
-    /// rerunning on an existing numbered list re-numbers it.
+    /// Numbers based on position within the selection, not the file.
+    /// Rerunning on an existing numbered list re-numbers it.
     static func convertToNumberedList() {
         applyLinePrefix { idx in "\(idx + 1). " }
     }
 
-    /// Walks each line touched by the selection and prepends the
-    /// result of `prefixForLine(index)`. Edits are applied bottom-up
-    /// so the line-start offsets stay valid as we go.
+    /// Applies bottom-up so line-start offsets stay valid as we go.
     private static func applyLinePrefix(_ prefixForLine: (Int) -> String) {
         guard let textView = actions else { return }
         let nsText = textView.text as NSString
@@ -1278,16 +1126,14 @@ enum CommandActions {
     }
 
 
-    /// Removes one leading `>` (and the optional space after it) from
-    /// every selected line. Useful for unwrapping email/Markdown quotes.
+    /// Unwraps email / Markdown quote indentation from every line.
     static func stripQuoteLevel() {
         transformSelection { text in
             let nl = state?.lineEnding.string ?? "\n"
             let lines = text.components(separatedBy: nl)
             let stripped = lines.map { line -> String in
                 var s = line
-                // BBEdit's "Strip Quotes" removes all leading quote
-                // markers, not just one level. Loop until none left.
+                // BBEdit parity: strip every level, not just one.
                 while s.hasPrefix("> ") { s.removeFirst(2) }
                 while s.hasPrefix(">")  { s.removeFirst() }
                 return s
@@ -1333,10 +1179,8 @@ enum CommandActions {
         }
     }
 
-    /// Collapse line breaks *within* paragraphs into single spaces.
-    /// Paragraphs are delimited by blank lines (one or more empty
-    /// lines); those delimiters are preserved. Useful for unwrapping
-    /// hard-wrapped prose into single-line paragraphs.
+    /// Collapses intra-paragraph breaks into spaces. Blank-line
+    /// paragraph delimiters survive — unwraps hard-wrapped prose.
     static func removeLinebreaks() {
         transformSelection { text in
             let nl = state?.lineEnding.string ?? "\n"
@@ -1352,9 +1196,8 @@ enum CommandActions {
         }
     }
 
-    /// Word-wrap each paragraph to ~72 columns. Whitespace inside each
-    /// paragraph is normalised to single spaces first, then greedy-
-    /// packed into lines that don't exceed the wrap column.
+    /// Greedy 72-column word wrap; whitespace is normalised to single
+    /// spaces first.
     static func addLinebreaks() {
         transformSelection { text in
             let nl = state?.lineEnding.string ?? "\n"
@@ -1378,20 +1221,17 @@ enum CommandActions {
     }
 
     static func normalizeSpaces()        { transformSelection(Transformations.normalizeSpaces) }
-    /// Default Zap Gremlins (no UI): strips ASCII control + invisible
-    /// Unicode, deletes them outright. Kept for the toolbar quick
-    /// action and as the action behind the bare "Zap Gremlins" menu
-    /// item. Use `presentZapGremlins` for the configurable sheet.
+    /// No UI — strips ASCII control + invisible Unicode outright.
+    /// Backs the toolbar quick action and the bare menu item; use
+    /// `presentZapGremlins` for the configurable sheet.
     static func zapGremlins() { transformSelection(Transformations.zapGremlins) }
 
-    /// Apply a configurable Zap Gremlins pass, called by the sheet
-    /// after the user picks categories and replacement.
+    /// Called by the sheet after the user picks categories and a
+    /// replacement.
     static func zapGremlinsConfigured(options: ZapGremlinsOptions) {
         transformSelection { Transformations.zapGremlins($0, options: options) }
     }
 
-    /// Opens the BBEdit-style Zap Gremlins… dialog so the user can
-    /// pick categories and replacement before zapping.
     static func presentZapGremlins() { presentSheet(.zapGremlins) }
 
     /// Browse and restore previous on-disk states of the current
