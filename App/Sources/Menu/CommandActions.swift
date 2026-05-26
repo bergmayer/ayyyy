@@ -900,7 +900,7 @@ enum CommandActions {
                        length: endLine.location + endLine.length - startLine.location)
     }
 
-    // MARK: - Sort by regex capture (Wave 1)
+    // MARK: - Sort by regex capture
 
     /// Sort the selected lines (or whole document) using a regex
     /// capture group as the sort key. `pattern` is matched against

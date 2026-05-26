@@ -41,7 +41,6 @@
 		B2000021 /* InfoInspectorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000021 /* InfoInspectorSheet.swift */; };
 		B2000022 /* LineUtilitiesSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000022 /* LineUtilitiesSheets.swift */; };
 		B2000023 /* Snippets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000023 /* Snippets.swift */; };
-		B2000024 /* DeveloperToolsSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000024 /* DeveloperToolsSheets.swift */; };
 		B2000019 /* MultiFileSearchSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000019 /* MultiFileSearchSheet.swift */; };
 		B2000025 /* ZapGremlinsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000025 /* ZapGremlinsSheet.swift */; };
 		B2000026 /* RevisionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000026 /* RevisionStore.swift */; };
@@ -61,8 +60,7 @@
 		B2000034 /* EditableTitleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000034 /* EditableTitleView.swift */; };
 		B2000035 /* MarkdownPreviewScene.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000035 /* MarkdownPreviewScene.swift */; };
 		B2000036 /* JSTransform.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000036 /* JSTransform.swift */; };
-		B2000037 /* Wave1Sheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000037 /* Wave1Sheets.swift */; };
-		B2000038 /* OutlineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000038 /* OutlineSheet.swift */; };
+		B2000038 /* OutlineBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000038 /* OutlineBuilder.swift */; };
 		B200003A /* OutlineSidebar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100003A /* OutlineSidebar.swift */; };
 		B2000040 /* ProcessLinesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000040 /* ProcessLinesSheet.swift */; };
 		B2000041 /* CanonizeSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000041 /* CanonizeSheet.swift */; };
@@ -119,7 +117,6 @@
 		B1000021 /* InfoInspectorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InfoInspectorSheet.swift; sourceTree = "<group>"; };
 		B1000022 /* LineUtilitiesSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LineUtilitiesSheets.swift; sourceTree = "<group>"; };
 		B1000023 /* Snippets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snippets.swift; sourceTree = "<group>"; };
-		B1000024 /* DeveloperToolsSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeveloperToolsSheets.swift; sourceTree = "<group>"; };
 		B1000019 /* MultiFileSearchSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiFileSearchSheet.swift; sourceTree = "<group>"; };
 		B1000025 /* ZapGremlinsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZapGremlinsSheet.swift; sourceTree = "<group>"; };
 		B1000026 /* RevisionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RevisionStore.swift; sourceTree = "<group>"; };
@@ -139,8 +136,7 @@
 		B1000034 /* EditableTitleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditableTitleView.swift; sourceTree = "<group>"; };
 		B1000035 /* MarkdownPreviewScene.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkdownPreviewScene.swift; sourceTree = "<group>"; };
 		B1000036 /* JSTransform.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSTransform.swift; sourceTree = "<group>"; };
-		B1000037 /* Wave1Sheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Wave1Sheets.swift; sourceTree = "<group>"; };
-		B1000038 /* OutlineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineSheet.swift; sourceTree = "<group>"; };
+		B1000038 /* OutlineBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineBuilder.swift; sourceTree = "<group>"; };
 		B100003A /* OutlineSidebar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutlineSidebar.swift; sourceTree = "<group>"; };
 		B1000040 /* ProcessLinesSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessLinesSheet.swift; sourceTree = "<group>"; };
 		B1000041 /* CanonizeSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CanonizeSheet.swift; sourceTree = "<group>"; };
@@ -292,14 +288,12 @@
 				B1000021 /* InfoInspectorSheet.swift */,
 				B1000022 /* LineUtilitiesSheets.swift */,
 				B1000023 /* Snippets.swift */,
-				B1000024 /* DeveloperToolsSheets.swift */,
 				B1000025 /* ZapGremlinsSheet.swift */,
 				B1000027 /* RevisionsSheet.swift */,
 				B1000032 /* TabSwitcherSheet.swift */,
 				B1000035 /* MarkdownPreviewScene.swift */,
 				B1000036 /* JSTransform.swift */,
-				B1000037 /* Wave1Sheets.swift */,
-				B1000038 /* OutlineSheet.swift */,
+				B1000038 /* OutlineBuilder.swift */,
 				B100003A /* OutlineSidebar.swift */,
 				B1000040 /* ProcessLinesSheet.swift */,
 				B1000041 /* CanonizeSheet.swift */,
@@ -473,8 +467,7 @@
 				B2000034 /* EditableTitleView.swift in Sources */,
 				B2000035 /* MarkdownPreviewScene.swift in Sources */,
 				B2000036 /* JSTransform.swift in Sources */,
-				B2000037 /* Wave1Sheets.swift in Sources */,
-				B2000038 /* OutlineSheet.swift in Sources */,
+				B2000038 /* OutlineBuilder.swift in Sources */,
 				B200003A /* OutlineSidebar.swift in Sources */,
 				B200001B /* RecentFilesStore.swift in Sources */,
 				B200001C /* KeyboardAccessoryBar.swift in Sources */,
@@ -485,7 +478,6 @@
 				B2000021 /* InfoInspectorSheet.swift in Sources */,
 				B2000022 /* LineUtilitiesSheets.swift in Sources */,
 				B2000023 /* Snippets.swift in Sources */,
-				B2000024 /* DeveloperToolsSheets.swift in Sources */,
 				B2000040 /* ProcessLinesSheet.swift in Sources */,
 				B2000041 /* CanonizeSheet.swift in Sources */,
 				B2000042 /* CharacterPanelSheet.swift in Sources */,
