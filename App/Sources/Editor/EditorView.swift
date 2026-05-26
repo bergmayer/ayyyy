@@ -144,6 +144,12 @@ struct EditorView: View {
             guard state.fontOverride == nil else { return }
             state.font = EditorFont(stored: newRaw)
         }
+        // Push Settings changes into the live state — without these,
+        // toggling a preference on an already-open tab leaves the
+        // engine running with the old value until the tab is closed
+        // and reopened. Packaged in a modifier to keep the body's
+        // `.onChange` chain short enough for the type checker.
+        .modifier(TypingPrefSync(state: state))
         // Watching `bufferRevision` (a UInt64 bumped per edit) is
         // O(1); watching `document.text` cascades a 1 MB+ String
         // through SwiftUI's observation graph on every keystroke —
@@ -1017,6 +1023,39 @@ struct EditorView: View {
 
     private func goToLine(_ line: Int) {
         state.textView?.goToLine(line)
+    }
+}
+
+/// Mirrors typing-helper UserDefaults values into the live
+/// `EditorState`. `EditorState` seeds these once at init, so without
+/// this bridge a Settings toggle wouldn't reach a long-lived tab
+/// until the tab was closed and reopened — the bug that kept live
+/// spell-check highlights invisible after toggling the pref on.
+private struct TypingPrefSync: ViewModifier {
+    let state: EditorState
+    @AppStorage(AppPreferenceKey.spellCheck) private var spellCheckPref: Bool = false
+    @AppStorage(AppPreferenceKey.autoCorrect) private var autoCorrectPref: Bool = false
+    @AppStorage(AppPreferenceKey.autoCapitalize) private var autoCapitalizePref: Bool = false
+    @AppStorage(AppPreferenceKey.smartQuotes) private var smartQuotesPref: Bool = false
+    @AppStorage(AppPreferenceKey.autoLinkDetection) private var autoLinkDetectionPref: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: spellCheckPref) { _, v in state.spellCheck = v }
+            .onChange(of: autoCorrectPref) { _, v in state.autoCorrect = v }
+            .onChange(of: autoCapitalizePref) { _, v in state.autoCapitalize = v }
+            .onChange(of: smartQuotesPref) { _, v in state.smartQuotes = v }
+            .onChange(of: autoLinkDetectionPref) { _, v in state.autoLinkDetection = v }
+            // Seed on appear too — the @AppStorage value beats the
+            // state's init-time snapshot if Settings changed before
+            // this tab had a chance to mount.
+            .onAppear {
+                state.spellCheck = spellCheckPref
+                state.autoCorrect = autoCorrectPref
+                state.autoCapitalize = autoCapitalizePref
+                state.smartQuotes = smartQuotesPref
+                state.autoLinkDetection = autoLinkDetectionPref
+            }
     }
 }
 
