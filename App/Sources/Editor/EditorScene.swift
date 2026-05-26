@@ -190,6 +190,15 @@ struct EditorScene: View {
                 applyLaunchBehaviorIfFirstScene()
                 consumePendingNewWindowURL()
                 adoptPendingTabIfAvailable()
+                // Shortcut delivered via `configurationForConnecting`
+                // (cold launch or new-scene activation) lands in
+                // `pendingShortcut` BEFORE this scene's `.onChange`
+                // subscribes — so the change is missed. Catch it
+                // here too.
+                if let pending = bus.scenes.pendingShortcut {
+                    bus.scenes.pendingShortcut = nil
+                    applyHomeShortcut(pending)
+                }
                 // Drafts banner only on brand-new blank scenes —
                 // restored or URL-launched scenes already have intent.
                 // Defer past one runloop so `.onOpenURL` has a chance
