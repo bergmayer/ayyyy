@@ -6,7 +6,7 @@ import GameController
 ///
 ///   * **iPhone (soft keyboard)** — custom horizontal-scrolling row
 ///     with esc, ⌃/⌥/⌘ sticky modifiers, line/document caret jumps,
-///     pan-gesture joystick, and a dismiss-keyboard button.
+///     and a dismiss-keyboard button.
 ///   * **iPad (soft keyboard)** — uses the system `inputAssistantItem`
 ///     shortcut bar instead, because a free-floating
 ///     `inputAccessoryView` on iPad bleeds into our status-bar overlay
@@ -487,9 +487,6 @@ final class EditorAccessoryView: UIInputView {
             CaretMover.moveToDocumentEnd(in: self?.host)
         })
 
-        // Joystick — pan-gesture trackpad on the button itself.
-        buttons.append(joystickButton())
-
         // Dismiss keyboard at the tail.
         buttons.append(button(symbol: "chevron.down", label: "Hide Keyboard") { [weak self] in
             self?.host?.resignFirstResponder()
@@ -562,16 +559,6 @@ final class EditorAccessoryView: UIInputView {
         objc_setAssociatedObject(self, &observerTimerKey, timer, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
-    // MARK: Joystick
-
-    private func joystickButton() -> AccessoryButton {
-        let btn = JoystickButton()
-        btn.configure(symbol: "arrow.up.and.down.and.arrow.left.and.right",
-                      accessibility: "Arrow Joystick (drag to move cursor)")
-        btn.host = host
-        return btn
-    }
-
     // MARK: Button factory
 
     private func button(symbol: String,
@@ -631,7 +618,7 @@ private final class AccessoryRow: UIView {
 // MARK: - Button
 
 @MainActor
-class AccessoryButton: UIControl {
+final class AccessoryButton: UIControl {
 
     private let symbolView = UIImageView()
     var tapAction: (() -> Void)?
@@ -689,68 +676,6 @@ class AccessoryButton: UIControl {
 
     @objc private func handleTap() {
         tapAction?()
-    }
-}
-
-// MARK: - Joystick (pan-gesture trackpad)
-
-/// Drag-to-move cursor button. Vertical drag steps by line, horizontal
-/// by character; diagonal drag fires both axes simultaneously. Drag
-/// thresholds are sized so a small wrist movement reaches each
-/// neighbour without overshooting.
-@MainActor
-final class JoystickButton: AccessoryButton {
-
-    weak var host: EditorEngine.TextView?
-
-    /// Tracked drag offset since the last fire, per axis. Each time
-    /// `|offset|` crosses the per-axis step we fire one move and
-    /// subtract that step — the user can keep dragging to keep moving.
-    private var firedOffset: CGPoint = .zero
-
-    /// Pixels of drag = one cursor step. Chars move smaller than
-    /// lines because lines are taller than character cells.
-    private static let charStep: CGFloat = 11
-    private static let lineStep: CGFloat = 18
-
-    override init() {
-        super.init()
-        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
-        pan.minimumNumberOfTouches = 1
-        pan.maximumNumberOfTouches = 1
-        pan.cancelsTouchesInView = false
-        addGestureRecognizer(pan)
-    }
-
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-    @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
-        switch recognizer.state {
-        case .began, .ended, .cancelled, .failed:
-            firedOffset = .zero
-        case .changed:
-            let translation = recognizer.translation(in: self)
-            consumeAxis(translation: translation)
-        default:
-            break
-        }
-    }
-
-    private func consumeAxis(translation: CGPoint) {
-        // Horizontal — characters
-        let dx = translation.x - firedOffset.x
-        if abs(dx) >= Self.charStep {
-            let steps = Int((dx / Self.charStep).rounded(.towardZero))
-            CaretMover.move(in: host, by: steps)
-            firedOffset.x += CGFloat(steps) * Self.charStep
-        }
-        // Vertical — lines
-        let dy = translation.y - firedOffset.y
-        if abs(dy) >= Self.lineStep {
-            let lineSteps = Int((dy / Self.lineStep).rounded(.towardZero))
-            CaretMover.moveCursor(in: host, byLines: lineSteps)
-            firedOffset.y += CGFloat(lineSteps) * Self.lineStep
-        }
     }
 }
 
