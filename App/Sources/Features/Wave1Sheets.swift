@@ -3,10 +3,8 @@ import UIKit
 
 // MARK: - Process Lines Containing
 
-/// "Process Lines Containing" — BBEdit's line-filter modal. Match
-/// every line in the document (or selection) against a pattern,
-/// then keep the matches / delete them / pull them onto the
-/// clipboard. The most-used "shape a document" operation in BBEdit.
+/// BBEdit-style line filter — keep / delete / copy lines that match
+/// a pattern.
 struct ProcessLinesSheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -67,8 +65,8 @@ struct ProcessLinesSheet: View {
 
 // MARK: - Canonize
 
-/// Canonize / Text Merge — apply a saved list of find/replace pairs
-/// (tab-separated, one per line) against the selection or document.
+/// Apply tab-separated find/replace pairs (one per line) against
+/// the selection or document.
 struct CanonizeSheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -118,9 +116,7 @@ struct CanonizeSheet: View {
 
 // MARK: - Character Panel
 
-/// Curated grid of common Unicode characters to insert at the cursor.
-/// Complements `CharacterInspectorSheet` — that one reads a selection,
-/// this one writes new content.
+/// Counterpart to `CharacterInspectorSheet`: that reads, this writes.
 struct CharacterPanelSheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -187,9 +183,8 @@ struct CharacterPanelSheet: View {
 
 // MARK: - Organize Footnotes
 
-/// Sheet for the Organize Footnotes command. Asks where to put the
-/// re-numbered definitions — at the end of the document, or after
-/// each paragraph that references them.
+/// End-of-document vs end-of-paragraph placement picker for
+/// Organize Footnotes.
 struct OrganizeFootnotesSheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -228,8 +223,8 @@ struct OrganizeFootnotesSheet: View {
     }
 }
 
-/// and an alignment for each column; emits a ready-to-edit GitHub-
-/// Flavored Markdown table at the cursor.
+/// Picks size + alignment and emits a GitHub-Flavored Markdown
+/// table at the cursor.
 struct MarkdownTableSheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -310,9 +305,8 @@ enum CharacterPanelCatalog {
         let name: String
     }
 
-    /// Section-grouped catalog. Skips the full ~150K-point Unicode
-    /// space — these are the characters editor users actually
-    /// want one-tap access to.
+    /// Hand-picked editor characters — no attempt at full Unicode
+    /// coverage.
     static let groups: [(String, [Entry])] = [
         ("Dashes & Spaces", [
             Entry(character: "—", name: "em dash"),
@@ -407,12 +401,10 @@ enum CharacterPanelCatalog {
 
 // MARK: - Drafts recovery
 
-/// Launch-time recovery sheet for unsaved Untitled drafts.
-/// Surfaces every entry from `DraftsStore.shared.loadAll()` so the
-/// user can re-open it (the bytes are loaded into a fresh tab, still
-/// Untitled + dirty so the title's "edited" subtitle stays on) or
-/// discard it (the on-disk draft is deleted). "Keep" leaves the
-/// draft on disk for a future recovery cycle.
+/// Launch-time recovery for unsaved buffers. Recovered tabs come
+/// back Untitled + dirty so the "edited" subtitle stays on.
+/// "Keep" leaves the draft on disk for the next session; "Discard"
+/// deletes it.
 struct DraftsRecoverySheet: View {
 
     @Environment(\.dismiss) private var dismiss
@@ -477,7 +469,6 @@ struct DraftsRecoverySheet: View {
     @ViewBuilder
     private func row(for draft: DraftRecord) -> some View {
         HStack(spacing: 10) {
-            // Body of the row — tappable to recover.
             Button {
                 let target = draft
                 dismiss()
@@ -488,11 +479,9 @@ struct DraftsRecoverySheet: View {
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        // Source path takes the top line when
-                        // present — the user is more likely to
-                        // recognize "Notes / ideas.md" than the
-                        // buffer's first 80 chars. The preview
-                        // becomes the secondary line. Untitled
+                        // URL-backed drafts lead with the source path
+                        // — "Notes / ideas.md" reads better than the
+                        // first 80 chars of the buffer. Untitled
                         // drafts flip back to preview-on-top.
                         if let display = draft.metadata?.sourceDisplay {
                             Text(display)
@@ -521,14 +510,10 @@ struct DraftsRecoverySheet: View {
             }
             .buttonStyle(.plain)
 
-            // Explicit per-row × — easier to discover than a
-            // swipe gesture, especially on iPad where users may
-            // not think to swipe a list row. Confirmation isn't
-            // required because individual drafts can't be
-            // unmistakably valuable — if it were, the user would
-            // have tapped Recover. Bulk-clear ("Discard All") in
-            // the toolbar still requires an explicit Hold-style
-            // destructive tap.
+            // Explicit × is more discoverable than swipe (especially
+            // on iPad). No per-row confirm — if the user thought
+            // the draft was valuable they'd have tapped Recover.
+            // Bulk Discard All still gates on the toolbar role.
             Button {
                 DraftsStore.shared.discard(draft.url)
                 drafts.removeAll { $0.id == draft.id }
