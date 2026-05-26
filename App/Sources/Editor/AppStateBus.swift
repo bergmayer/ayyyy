@@ -1,14 +1,9 @@
 import SwiftUI
 
-/// Umbrella for the app's shared @Observable state. Each domain
-/// (find, scene routing, picker intents, sheets, pending URLs) lives
-/// in its own focused @Observable type so a view that reads find
-/// context doesn't re-render when an unrelated palette flag flips.
-///
-/// `AppStateBus.shared` is the single entry point; access state as
-/// `AppStateBus.shared.find.context`, `…scenes.currentEditor`, etc.
-/// Children are `var` (not `let`) so call sites can build writable
-/// `Binding`s via key-path projection through @Bindable.
+/// Shared @Observable state, split per domain so a view that reads
+/// find context doesn't re-render when an unrelated palette flag
+/// flips. Children are `var` so call sites can build writable
+/// `Binding`s through @Bindable.
 @MainActor
 @Observable
 final class AppStateBus: CommandContext {
@@ -24,14 +19,8 @@ final class AppStateBus: CommandContext {
     private init() {}
 }
 
-/// Surface that `CommandActions` reads/writes when invoking a
-/// command. In production it's the `AppStateBus.shared` singleton;
-/// at test time a caller can swap in a stub via
-/// `CommandActions.context = stub` to drive commands in isolation.
-///
-/// The protocol just re-exposes the existing sub-trees the bus
-/// already owns — no new API surface; this is a seam for DI, not a
-/// new architecture.
+/// DI seam for `CommandActions`. Production passes the bus; tests
+/// swap in a stub via `CommandActions.context = stub`.
 @MainActor
 protocol CommandContext: AnyObject {
     var find: FindState     { get }
@@ -43,23 +32,20 @@ protocol CommandContext: AnyObject {
 
 // MARK: - Find
 
-/// Persistent search options + one-shot UI toggles consumed by the
-/// find/replace sheet. Mirrors the macOS "find pasteboard" so ⌘G and
-/// ⌘⇧G keep working after the sheet is dismissed.
+/// Mirrors macOS's find pasteboard so ⌘G / ⌘⇧G keep working after
+/// the sheet is dismissed.
 @MainActor
 @Observable
 final class FindState {
     var context = FindContext()
 
-    /// One-shot toggles consumed by `FindReplaceSheet.onAppear` so the
-    /// menu can request the sheet open with Replace expanded and/or
-    /// in step-through (query) mode. The sheet clears them after
-    /// reading.
+    /// One-shot toggles cleared by `FindReplaceSheet.onAppear` after
+    /// reading. Let menu items request the sheet with Replace
+    /// expanded or in step-through mode.
     var pendingShowReplace = false
     var pendingQueryMode   = false
 }
 
-/// Persistent search options shared across the app.
 struct FindContext: Equatable {
     var query: String = ""
     var replacement: String = ""
@@ -70,47 +56,38 @@ struct FindContext: Equatable {
 
 // MARK: - Scene routing
 
-/// Tracks the focused editor scene, the registry of open sessions,
-/// and the bridges menu / UIKit code uses to open and route URLs to
-/// new windows. SwiftUI's `@FocusedValue` doesn't propagate into the
-/// editor engine's UIKit textview, so we keep our own pointers.
+/// SwiftUI's `@FocusedValue` doesn't propagate into the engine's
+/// UIKit text view, so menu / palette / UIKit code reads focus
+/// through these pointers instead.
 @MainActor
 @Observable
 final class SceneRouter {
 
-    /// State of the most recently shown document scene. Cleared when
-    /// the underlying `EditorState` is deallocated (weak ref).
     weak var currentEditor: EditorState?
 
-    /// Tab session of the focused window. Re-bound on each scene
-    /// `.active` transition so menu commands target the visible
-    /// scene rather than the most recently appeared one.
+    /// Re-bound on each scene `.active` transition so menu commands
+    /// target the visible scene, not the most recently appeared one.
     weak var currentSession: EditorSession?
 
-    /// Bridge so non-View code (commands, the palette, UIKit
-    /// delegates) can open named `WindowGroup` scenes. Installed by
-    /// each editor scene's `onAppear`.
+    /// Installed by each editor scene's `onAppear`. Lets non-View
+    /// callers open named `WindowGroup` scenes.
     var openWindowAction: ((SceneID) -> Void)?
 
-    /// Bridge for "open this URL per the user's destination
-    /// preference" — new window vs new tab. Installed by editor
-    /// scenes; invoked from UIKit-level entry points like
+    /// Routes a URL to a new window or new tab per the open menu's
+    /// override. Invoked from UIKit entry points like
     /// `DocumentPickerBridge` that don't have a session reference.
     var routeOpenURL: ((URL) -> Void)?
 
-    /// Set when the home-screen quick action fires before any scene
-    /// is mounted; consumed by the first scene to appear.
+    /// Home-screen quick action that fired before any scene mounted.
+    /// Consumed by the first scene to appear.
     var pendingShortcut: HomeShortcut?
 
     /// Tripped by the first scene to apply the launch-behaviour
-    /// preference. Stops every subsequent scene's onAppear from
-    /// firing the same action.
+    /// preference, so subsequent scenes don't re-fire it.
     var hasAppliedLaunchBehavior = false
 
     // MARK: Session registry
 
-    /// Compacted on read — entries self-empty when their referent
-    /// goes away, so we filter on each access.
     private var sessionRegistry: [WeakRef<EditorSession>] = []
 
     func registerSession(_ session: EditorSession) {
@@ -122,20 +99,15 @@ final class SceneRouter {
         sessionRegistry.removeAll { $0.ref == nil || $0.ref === session }
     }
 
-    /// All currently-live sessions in insertion order. Read-only —
-    /// dead slots are filtered out by `compactMap` (we don't prune
-    /// the underlying array on read because that's a write inside
+    /// Read-only; never prune on read — that would be a write inside
     /// a getter, which freezes SwiftUI bindings in a tight
-    /// invalidation loop). Stale `WeakRef` slots accumulate up to
-    /// the next `registerSession` / `deregisterSession` call, which
-    /// is fine for an app that opens at most a handful of windows.
+    /// invalidation loop. Stale slots clear next register/deregister.
     var allOpenSessions: [EditorSession] {
         sessionRegistry.compactMap { $0.ref }
     }
 
-    /// Locate the session that currently owns `tabID`. Used by the
-    /// cross-window tab drag — drop destination on session B reads
-    /// the dragged id and resolves it against session A.
+    /// Resolves a tab id back to its owning session. Cross-window
+    /// drag uses this to find the source on drop.
     func session(containing tabID: UUID) -> EditorSession? {
         allOpenSessions.first { session in
             session.tabs.contains(where: { $0.id == tabID })
@@ -144,21 +116,16 @@ final class SceneRouter {
 
     // MARK: User-requested scene opens
 
-    /// IDs of secondary WindowGroups the user has explicitly asked
-    /// to open during this app launch. iOS doesn't expose
-    /// `restorationBehavior(.disabled)`, so palette scenes that the
-    /// system tries to restore would otherwise re-appear on cold
-    /// launch. `requestOpenWindow(_:)` adds the id; the scene's
-    /// `consumeOpen(_:)` removes it and reports whether the open was
-    /// user-initiated.
+    /// iOS has no `restorationBehavior(.disabled)`, so palette
+    /// scenes the system tries to restore would re-appear on cold
+    /// launch. We gate them: `requestOpenWindow(_:)` adds the id;
+    /// `consumeOpen(_:)` returns true only if a request matched.
     private var pendingPaletteOpens: Set<SceneID> = []
 
     func requestOpenWindow(_ id: SceneID) {
         pendingPaletteOpens.insert(id)
     }
 
-    /// `true` when the matching `requestOpenWindow(_:)` was the
-    /// reason this scene appeared; `false` when iPadOS restored it.
     func consumeOpen(_ id: SceneID) -> Bool {
         pendingPaletteOpens.remove(id) != nil
     }
@@ -166,19 +133,17 @@ final class SceneRouter {
 
 // MARK: - Pickers
 
-/// Mutually-exclusive file-picker intent driving the editor scene's
-/// `.fileImporter` / `.fileExporter` modifiers via per-intent
-/// bindings. Single optional > parallel booleans, both for state
-/// integrity and for SwiftUI observation locality.
+/// One pending picker at a time — a single optional, not a flag per
+/// intent, so two pickers can never both think they're presenting.
 @MainActor
 @Observable
 final class PickerIntents {
 
     var pending: PickerIntent?
 
-    /// SwiftUI Bool binding that presents the matching picker.
-    /// Returns true iff `pending == intent`; setting false (dismiss
-    /// callback) clears `pending` only if it still matches.
+    /// True iff `pending == intent`. Dismissing only clears the
+    /// pending intent if it still matches — guards against a stale
+    /// dismiss from a previous picker stomping on a newer one.
     func binding(for intent: PickerIntent) -> Binding<Bool> {
         Binding(
             get: { self.pending == intent },
@@ -193,7 +158,6 @@ final class PickerIntents {
     }
 }
 
-/// Pending file-picker intent surfaced by menu / palette commands.
 enum PickerIntent: Equatable {
     case open
     case saveAs
@@ -203,47 +167,36 @@ enum PickerIntent: Equatable {
 
 // MARK: - Editing surface
 
-/// Sheet presentation, save callback, revert trigger, and surfaced
-/// errors — the things the active editor scene exposes back to the
-/// menu / palette layer.
+/// What the active editor scene exposes back to the menu / palette.
 @MainActor
 @Observable
 final class EditingState {
 
-    /// Drives the sheet presentation in the active editor view.
     var presentedSheet: EditorSheet?
 
-    /// `true` while the Safari-style tab switcher is on screen. Lives
-    /// here (not on EditorScene) so menu / palette / toolbar buttons
-    /// can toggle it without holding a scene reference. The active
-    /// scene observes and runs the in-scene `matchedGeometryEffect`
-    /// morph itself; the switcher is not a sheet.
+    /// On the bus rather than the scene so menu / palette / toolbar
+    /// can toggle the switcher without holding a scene reference.
+    /// The active scene runs the `matchedGeometryEffect` morph
+    /// itself — the switcher isn't a sheet.
     var tabSwitcherActive: Bool = false
 
-    /// Saves the current file. Installed by the active scene's
-    /// `EditorView.onAppear`; captured weakly so cleanup is
-    /// automatic.
+    /// Installed by the active scene's `EditorView.onAppear`.
     var saveCurrentDocument: (() -> Void)?
 
-    /// Incremented by the menu to ask the active scene to revert
-    /// the in-memory buffer to whatever is on disk.
+    /// Bumped by the menu to ask the active scene to revert.
     var revertRequestCount: Int = 0
 
-    /// Non-nil triggers an alert in the active editor — used to
-    /// surface load / save failures.
+    /// Non-nil triggers a load/save-failure alert in the active
+    /// editor.
     var openErrorMessage: String?
 
-    /// Pending "close this tab — it has unsaved changes" prompt.
-    /// EditorView observes and presents a confirmation dialog. Set
-    /// by `CommandActions.requestCloseTab(_:)` when the close target
-    /// has dirty / untitled content.
+    /// Set by `CommandActions.requestCloseTab(_:)` when a dirty or
+    /// untitled tab needs the confirmation dialog.
     var pendingClose: PendingClose?
 }
 
-/// One tab that's asking the user "should I really close?" before
-/// we discard its buffer. The session id is captured so the dialog
-/// targets the right window even if focus shifts before the user
-/// taps a button.
+/// The session id is captured so the dialog targets the right
+/// window even if focus shifts before the user taps a button.
 @MainActor
 struct PendingClose: Identifiable {
     let id = UUID()
@@ -256,58 +209,45 @@ struct PendingClose: Identifiable {
 // MARK: - Pending URLs / targets
 
 /// One-shot URL routing intents the editor scenes pick up via
-/// `.onChange`. Distinct flavours: load-in-place (Revert,
-/// pre-routed Multi-File-Search), seed-a-new-window (Open in new
-/// window), and post-load goto-line (Multi-File-Search results).
+/// `.onChange`.
 @MainActor
 @Observable
 final class PendingURLs {
 
-    /// Menu-driven request to load a URL into the *current* tab
-    /// (e.g. from Revert). Different from `newWindow` which spawns
-    /// a fresh scene.
+    /// Load into the current tab (Revert, pre-routed Multi-File-
+    /// Search). Distinct from `newWindow`, which spawns a scene.
     var openInPlace: URL?
 
-    /// Set when "Open…" picks a file and the current scene already
-    /// has a doc. A new editor window is requested via
-    /// `openWindowAction(.editor)`; the freshly-spawned scene's
-    /// onAppear consumes this URL on first appearance.
+    /// "Open…" picked a file and the current scene already has a
+    /// doc. The freshly-spawned scene's onAppear consumes it.
     var newWindow: URL?
 
-    /// Line number a freshly-loaded document should jump to after
-    /// its load Task commits text into `EditorState`. Set by
-    /// Multi-File Search when the user taps a result row.
+    /// Line to jump to once a freshly-loaded document commits text
+    /// into `EditorState`. Set by Multi-File Search result taps.
     var goToLine: Int?
 
-    /// One-shot override for the next "Open…" routing. Set by the
-    /// "Open in New Tab…" / "Open in New Window…" menu items so the
-    /// user can pick the non-preferred destination without changing
-    /// the persistent preference. Cleared by `DocumentDestination
-    /// .current()` immediately after read.
+    /// One-shot override for the next "Open…" routing. The "Open
+    /// in New Tab…" / "Open in New Window…" menu items set it; the
+    /// next `DocumentDestination.current()` clears it on read.
     var nextOpenDestinationOverride: DocumentDestination?
 
-    /// Tab detached from another session that's waiting to be
-    /// adopted by the next fresh editor scene. Drives "Move Tab to
-    /// New Window" — the source detaches, requests a new window via
-    /// `openWindow(id: .editor)`, and the new scene's onAppear
-    /// adopts this tab in place of its default blank one.
+    /// Drives "Move Tab to New Window": source detaches, requests
+    /// a new window, the new scene's onAppear adopts this tab in
+    /// place of its default blank one.
     var adoptedTab: TabModel?
 }
 
 // MARK: - Supporting types
 
-/// Home-screen quick actions wired up in Info.plist via
-/// `UIApplicationShortcutItems`. The `rawValue` matches the
-/// `UIApplicationShortcutItemType` strings declared there.
+/// `rawValue` must match the `UIApplicationShortcutItemType` strings
+/// declared in Info.plist under `UIApplicationShortcutItems`.
 enum HomeShortcut: String {
     case newFile        = "com.palefire.ayyyy.shortcut.newFile"
     case commandPalette = "com.palefire.ayyyy.shortcut.commandPalette"
 }
 
-/// Stable identifiers for every named `WindowGroup` in `AyyyyApp`.
-/// Used in place of bare string literals at every `openWindow(id:)`
-/// / `dismissWindow(id:)` / registry call site so a typo at a call
-/// site stops compiling instead of silently no-op'ing at runtime.
+/// Replaces bare string literals at every `openWindow(id:)` call so
+/// a typo fails the build instead of silently no-op'ing at runtime.
 enum SceneID: String {
     case editor
     case preferences
@@ -316,10 +256,9 @@ enum SceneID: String {
     case markdownPreview = "markdown-preview"
 }
 
-/// Where a freshly-opened document should land. The app-wide
-/// preference is gone — the File menu carries explicit "Open in New
-/// Tab…" / "Open in New Window…" entries that flip the destination
-/// per-open. ⌘N / ⌘T do what they say regardless.
+/// There's no app-wide preference — the File menu's per-open
+/// "Open in New Tab…" / "Open in New Window…" items flip this for
+/// the next open. ⌘N / ⌘T do what they say regardless.
 enum DocumentDestination: String, CaseIterable, Identifiable {
     case window = "window"
     case tab    = "tab"
@@ -332,12 +271,9 @@ enum DocumentDestination: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Resolves the destination for the *next* open flow. iPhone is
-    /// single-window by OS design and always returns `.tab`. iPad
-    /// returns the one-shot override set by the "Open in New …" menu
-    /// items, or `.window` as the default. The override is cleared
-    /// in `EditorScene.route(open:)` once routing completes.
-    /// `@MainActor` because it touches AppStateBus state.
+    /// iPhone is single-window by OS design and always returns
+    /// `.tab`. iPad reads the one-shot override and clears it in
+    /// `EditorScene.route(open:)` once routing completes.
     @MainActor
     static func current() -> DocumentDestination {
         if DeviceIdiom.isPhone { return .tab }
@@ -345,35 +281,26 @@ enum DocumentDestination: String, CaseIterable, Identifiable {
     }
 }
 
-/// What a tab is currently showing. Mirrors Safari's "new tab page"
-/// pattern — `.fileBrowser` means the tab hosts a
-/// UIDocumentBrowserViewController inline; a pick transitions the
-/// same tab back to `.editor` with the picked file loaded.
+/// `.fileBrowser` hosts a UIDocumentBrowserViewController inline;
+/// a pick transitions the tab back to `.editor` with the file loaded.
 enum TabKind {
     case editor
     case fileBrowser
 }
 
-/// One tab in an editor window. Owns its own document and editor
-/// state — `EditorView` reads both via plain references. Equatable
-/// by identity so SwiftUI can match rows in the tab bar.
+/// Equatable by identity so SwiftUI can match rows in the tab bar.
 @MainActor
 @Observable
 final class TabModel: Identifiable {
     let id = UUID()
     let document: PlainTextDocument
     let state: EditorState
-    /// Pinned tabs sort to the left of the strip, render as compact
-    /// favicon-style chips, and survive "Close Other Tabs". Mirrors
-    /// Safari's pin behaviour.
+    /// Pinned tabs sort left, render as compact chips, and survive
+    /// "Close Other Tabs" — mirrors Safari.
     var isPinned: Bool = false
-    /// What the tab is currently rendering. Editor tabs use
-    /// `document` + `state`; browser tabs ignore both until a pick
-    /// transitions them back to editor.
     var kind: TabKind = .editor
-    /// Lazily-created secondary state for split-view mode. Lives
-    /// on the tab so split state is per-tab and the pane keeps its
-    /// own cursor / scroll across split toggles.
+    /// Per-tab so split state isn't shared between tabs — each pane
+    /// keeps its own cursor / scroll across split toggles.
     var secondaryState: EditorState?
 
     init() {
@@ -381,9 +308,8 @@ final class TabModel: Identifiable {
         self.state = EditorState()
     }
 
-    /// Get-or-create the secondary state used by the split pane.
-    /// Seeds with the same view settings as the primary so both
-    /// panes look identical to start.
+    /// Seeds the split pane with the same view settings as the
+    /// primary so both panes start identical.
     func ensureSecondaryState() -> EditorState {
         if let existing = secondaryState { return existing }
         let fresh = EditorState()
@@ -398,10 +324,9 @@ final class TabModel: Identifiable {
         fresh.showLineNumbers = state.showLineNumbers
         fresh.wrapLines = state.wrapLines
         fresh.savedBaselineText = state.savedBaselineText
-        // Wire the bidirectional sibling links so the editor view's
-        // coordinator can find the other pane's text view and push
-        // per-keystroke deltas across without going through a
-        // shared observable (which would re-render every observer).
+        // Bidirectional sibling links so each coordinator can find
+        // the other pane's text view directly — pushing deltas
+        // through a shared observable would re-render every observer.
         state.siblingState = fresh
         fresh.siblingState = state
         secondaryState = fresh
@@ -415,15 +340,10 @@ extension TabModel: Equatable {
     }
 }
 
-/// Snapshot kept in `ClosedTabsStore.shared` so ⇧⌘T (and the
-/// long-press menu on `+`) can resurrect a tab. URL-backed tabs
-/// reopen via the standard load path; unsaved scratches restore from
-/// the text snapshot taken at close time.
-///
-/// Codable so the store can persist the pool to UserDefaults — that
-/// means a closed unsaved buffer survives the window closing AND a
-/// full app relaunch, which is the safety net the user expects when
-/// they think "I closed it but I didn't mean to."
+/// Codable + persisted to UserDefaults so a closed unsaved buffer
+/// survives both the window close AND a full app relaunch — the
+/// safety net the user expects when they think "I closed it but I
+/// didn't mean to."
 struct ClosedTabRecord: Identifiable, Codable {
     let id: UUID
     let displayName: String
@@ -443,18 +363,17 @@ struct ClosedTabRecord: Identifiable, Codable {
         self.closedAt = closedAt
     }
 
-    /// `true` for closures we want to highlight in recovery UI —
-    /// untitled buffers with content the user could otherwise lose
-    /// forever. Saved files have their bytes on disk; we don't gate
-    /// the standard "Reopen Last Closed Tab" on this flag.
+    /// Untitled buffers with content — the ones the user could
+    /// otherwise lose forever, worth highlighting in recovery UI.
+    /// "Reopen Last Closed Tab" doesn't gate on this.
     var isUnsavedScratch: Bool {
         fileURL == nil && !(unsavedSnapshot ?? "").isEmpty
     }
 }
 
-/// App-wide persistent pool of closed-tab records. Replaces the
-/// per-session ring buffer so closures survive window-close and app
-/// relaunch. Capped to 25 to keep the storage payload modest.
+/// App-wide pool persisted to UserDefaults. Replaces the old per-
+/// session ring buffer so closures survive window-close and relaunch.
+/// Capped at 25 — modest storage payload.
 @MainActor
 @Observable
 final class ClosedTabsStore {
@@ -508,70 +427,50 @@ final class ClosedTabsStore {
 
 // MARK: - Drafts auto-save
 
-/// Sidecar metadata persisted alongside each draft file. Optional
-/// `sourceBookmark` reconnects the recovered buffer to the
-/// originally-opened URL (for URL-backed dirty docs that hadn't
-/// been saved when the window closed). Untitled drafts leave the
-/// fields nil — they recover as fresh Untitled tabs.
+/// Sidecar JSON next to each draft .txt. Untitled drafts leave the
+/// fields nil and recover as fresh Untitled tabs.
 struct DraftMetadata: Codable {
-    /// Security-scoped bookmark for the source file URL. We round-
-    /// trip through bookmarks rather than raw paths because file-
-    /// provider locations (Nextcloud, iCloud) need explicit scope
-    /// to re-open after relaunch.
+    /// Security-scoped bookmark, not a raw path: file-provider
+    /// locations (Nextcloud, iCloud) need explicit scope to re-open
+    /// after relaunch.
     var sourceBookmark: Data?
-    /// Display path for the recovery sheet's row (e.g. last 2-3
-    /// path components). Falls back to "Untitled" when nil.
+    /// Last 2-3 path components for the recovery row.
     var sourceDisplay: String?
-    /// File encoding raw rawValue (UInt32, the `String.Encoding`
-    /// raw representation). nil for untitled.
+    /// `String.Encoding.rawValue`. nil for untitled.
     var sourceEncodingRaw: UInt?
 }
 
-/// Per-document recoverable draft. Loaded from
-/// `Documents/Drafts/<UUID>.txt` files (text body) plus an optional
-/// sidecar `<UUID>.json` for URL-backed metadata. Each entry is one
-/// separately-recoverable dirty buffer from a previous session.
+/// One recoverable dirty buffer from a previous session.
+/// `Documents/Drafts/<UUID>.txt` + optional `<UUID>.json` sidecar.
 struct DraftRecord: Identifiable {
     let id: UUID
     let url: URL
     let modified: Date
     let bytes: Int
     let preview: String
-    /// `nil` → recovers as a fresh Untitled tab. Non-nil → recovers
-    /// by re-opening the bookmarked source URL and applying the
-    /// drafted text on top (marking the doc dirty so the user knows
-    /// the on-disk file still has the old bytes).
+    /// `nil` → recovers as Untitled. Non-nil → re-opens the
+    /// bookmarked URL and applies drafted text on top, marking
+    /// the doc dirty so the user knows disk still has the old bytes.
     let metadata: DraftMetadata?
 }
 
-/// Mac-style autosave for every dirty buffer — untitled OR URL-
-/// backed. Writes the live text to `Documents/Drafts/<UUID>.txt`
-/// (plus optional `<UUID>.json` sidecar) so a system-gesture window
-/// close (3-finger pinch, App Switcher swipe, Stage Manager close)
-/// doesn't lose typed bytes regardless of whether the buffer ever
-/// had a save location.
+/// Mac-style autosave for every dirty buffer. Writes live text to
+/// `Documents/Drafts/<UUID>.txt` so a system-gesture close
+/// (3-finger pinch, App Switcher swipe, Stage Manager close) can't
+/// lose typed bytes, with or without a save location.
 ///
-/// Why a separate directory + UUID-per-doc: each tab has its own
-/// identity; two unrelated drafts must not stomp on each other's
-/// bytes. The doc keeps a back-reference to its own draft file
-/// (`PlainTextDocument.draftURL`) so subsequent autosaves overwrite
-/// the SAME file in place — no orphan accumulation.
+/// UUID-per-doc + back-reference on `PlainTextDocument.draftURL` so
+/// repeat autosaves overwrite the same file — no orphan accumulation.
 @MainActor
 final class DraftsStore {
 
     static let shared = DraftsStore()
 
-    /// Maximum drafts kept on disk. A new draft pushes out the
-    /// oldest when this is exceeded. Keeps the recovery sheet a
-    /// glance-readable list and prevents drifting forever past
-    /// user attention. Six is enough to span a session's worth of
-    /// experiments without becoming clutter.
+    /// Six is enough to span a session's worth of experiments
+    /// without becoming clutter. New pushes oldest out — the sheet
+    /// stays glance-readable.
     static let maxDrafts = 6
 
-    /// `Documents/Drafts/` — created on first use. Visible to the
-    /// user via Files (no `LSSupportsOpeningDocumentsInPlace` on the
-    /// app means it's app-internal, but the user can still tap the
-    /// recovery banner to recover any draft).
     let directory: URL
 
     private init() {
@@ -581,12 +480,10 @@ final class DraftsStore {
         try? FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
     }
 
-    /// Write `text` to a draft file. Creates a new UUID-named file
-    /// the first time, otherwise overwrites the existing one. When
-    /// `metadata` is non-nil writes a JSON sidecar so the recovery
-    /// path can re-open the source URL. Returns the text URL so the
-    /// caller can stash it on `PlainTextDocument.draftURL` and route
-    /// the next autosave to the same path.
+    /// Creates a new UUID-named file on first write, overwrites in
+    /// place after that. The returned URL is what the caller should
+    /// stash on `PlainTextDocument.draftURL` so the next autosave
+    /// hits the same path.
     @discardableResult
     func save(text: String, existing: URL?, metadata: DraftMetadata? = nil) -> URL? {
         let url = existing ?? directory.appendingPathComponent("\(UUID().uuidString).txt")
@@ -597,10 +494,9 @@ final class DraftsStore {
                 let sidecar = url.deletingPathExtension().appendingPathExtension("json")
                 try? blob.write(to: sidecar, options: .atomic)
             } else {
-                // No metadata = untitled. Strip a stale sidecar (the
-                // doc may have been saved-to-disk then Reverted, or
-                // the URL became invalid) so the recovery path
-                // doesn't show a phantom "source" hint.
+                // Strip any stale sidecar — the doc may have been
+                // saved-then-reverted, in which case a leftover
+                // sidecar would surface a phantom "source" hint.
                 let sidecar = url.deletingPathExtension().appendingPathExtension("json")
                 try? FileManager.default.removeItem(at: sidecar)
             }
@@ -611,17 +507,13 @@ final class DraftsStore {
         }
     }
 
-    /// FIFO eviction: when more than `maxDrafts` drafts exist on
-    /// disk, drop the oldest until the count is back at the cap.
-    /// `freshlySaved` is the URL the caller just wrote — protected
-    /// from eviction even if it has an older mtime (e.g. an in-
-    /// place overwrite that didn't bump `contentModificationDate`).
+    /// FIFO eviction. `freshlySaved` is exempt even if its mtime
+    /// is older — an in-place overwrite doesn't always bump
+    /// `contentModificationDate`, and we don't want to evict the
+    /// caller's brand-new write.
     private func enforceCap(keeping freshlySaved: URL) {
         let records = loadAll()
         guard records.count > Self.maxDrafts else { return }
-        // `loadAll` returns newest-first; iterate from the END
-        // (oldest) and discard until we're at the cap. Skip the
-        // freshly-saved file so it's never the eviction victim.
         var toEvict = Array(records.reversed())
         var remaining = records.count
         while remaining > Self.maxDrafts, let oldest = toEvict.first {
@@ -632,10 +524,8 @@ final class DraftsStore {
         }
     }
 
-    /// Delete a draft file (and its sidecar, if any). Called on
-    /// Save-As — bytes now live at the user-chosen URL — and on
-    /// Discard, where the user explicitly dropped them. Silent on
-    /// failure: missing files are fine.
+    /// Missing files are fine — Save-As and Discard both call here
+    /// without knowing whether the draft was ever written.
     func discard(_ url: URL?) {
         guard let url else { return }
         try? FileManager.default.removeItem(at: url)
@@ -643,8 +533,7 @@ final class DraftsStore {
         try? FileManager.default.removeItem(at: sidecar)
     }
 
-    /// Enumerate every recoverable draft, newest first. Used by the
-    /// launch-time recovery sheet. Empty drafts are filtered.
+    /// Every recoverable draft, newest first, empties filtered.
     func loadAll() -> [DraftRecord] {
         let urls = (try? FileManager.default.contentsOfDirectory(
             at: directory,
@@ -683,18 +572,15 @@ final class DraftsStore {
     }
 }
 
-/// Per-window collection of tabs. The active tab's document and
-/// state are what `EditorView` reads; modifiers on `EditorScene`
-/// (file pickers, sheets, save, etc.) all target the active tab.
+/// Per-window collection of tabs. Modifiers on `EditorScene` all
+/// target the active tab.
 @MainActor
 @Observable
 final class EditorSession {
     var tabs: [TabModel]
     var selectedTabID: UUID
-    /// Convenience view of the global closed-tabs pool — exposed on
-    /// the session so existing call sites (TabSwitcherSheet's `+`
-    /// long-press menu, TabBarView's drop list) keep their bindings
-    /// without each having to reach into ClosedTabsStore directly.
+    /// View of the global pool, surfaced on the session so existing
+    /// call sites don't need to reach into `ClosedTabsStore` directly.
     var recentlyClosed: [ClosedTabRecord] { ClosedTabsStore.shared.records }
 
     init() {
@@ -703,10 +589,8 @@ final class EditorSession {
         self.selectedTabID = initial.id
     }
 
-    /// Returns the tab matching `selectedTabID`. Repairs the
-    /// selection if it's drifted out of sync (assertion in debug;
-    /// silently picks the first tab in release). Empties violate
-    /// the closeTab invariant — that's a programmer error.
+    /// Self-repairs a drifted selection; an empty `tabs` is a
+    /// programmer error (close-tab invariant).
     var activeTab: TabModel {
         if let tab = tabs.first(where: { $0.id == selectedTabID }) { return tab }
         assertionFailure("selectedTabID \(selectedTabID) not in tabs — session is out of sync")
@@ -720,18 +604,16 @@ final class EditorSession {
     @discardableResult
     func newTab() -> TabModel {
         let tab = TabModel()
-        // Insert after the last pinned tab so unpinned newcomers
-        // never push pins around. Mirrors Safari.
+        // Drop after the last pinned tab so newcomers don't shove
+        // pins around — Safari rule.
         let insertAt = tabs.partitionPointAfterPinned()
         tabs.insert(tab, at: insertAt)
         selectedTabID = tab.id
         return tab
     }
 
-    /// "Open in New Tab" entry point: spawn a tab that renders the
-    /// inline file browser instead of the editor. The pick callback
-    /// (wired by `EditorScene`) flips its `kind` to `.editor` and
-    /// loads the chosen URL into the same tab.
+    /// "Open in New Tab" entry point. The pick callback flips kind
+    /// back to `.editor` and loads the chosen URL into the same tab.
     @discardableResult
     func newFileBrowserTab() -> TabModel {
         let tab = newTab()
@@ -739,12 +621,9 @@ final class EditorSession {
         return tab
     }
 
-    /// Whether closing a tab should also archive its content into
-    /// `ClosedTabsStore` for "Reopen Last Closed Tab". `.archive` is
-    /// the default (matches Safari behavior for tab × / ⌘W on a
-    /// clean tab). `.discard` must be used by the unsaved-changes
-    /// dialog's Discard path so the deliberately-thrown-away buffer
-    /// can't be resurrected by ⇧⌘T.
+    /// `.discard` is required from the unsaved-changes dialog's
+    /// Discard path so a deliberately-thrown-away buffer can't be
+    /// resurrected by ⇧⌘T.
     enum CloseDisposition {
         case archive
         case discard
@@ -752,8 +631,8 @@ final class EditorSession {
 
     func closeTab(_ id: UUID, disposition: CloseDisposition = .archive) -> Bool {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return false }
-        // Never let the window go down to zero tabs — the caller is
-        // expected to close the window when this returns `false`.
+        // Caller is expected to close the window when this returns
+        // false — never let `tabs` go to zero.
         guard tabs.count > 1 else { return false }
         let tab = tabs[idx]
         if disposition == .archive {
@@ -767,10 +646,8 @@ final class EditorSession {
         return true
     }
 
-    /// Close every tab except the one identified — but keep pinned
-    /// tabs, matching Safari's "Close Other Tabs" semantics. Selection
-    /// snaps to the pivot tab. Returns the count of tabs actually
-    /// closed.
+    /// Keeps pinned tabs — Safari semantics. Selection snaps to the
+    /// pivot. Returns count of tabs closed.
     @discardableResult
     func closeOtherTabs(except id: UUID) -> Int {
         let victims = tabs.filter { $0.id != id && !$0.isPinned }
@@ -782,9 +659,7 @@ final class EditorSession {
         return victims.count
     }
 
-    /// Close every tab strictly to the right of the given tab in the
-    /// strip's visual order. Pinned tabs are exempt. Selection snaps
-    /// to the pivot tab. Returns the count of tabs actually closed.
+    /// Pinned tabs are exempt. Selection snaps to the pivot.
     @discardableResult
     func closeTabsToRight(of id: UUID) -> Int {
         guard let pivot = tabs.firstIndex(where: { $0.id == id }) else { return 0 }
@@ -807,17 +682,15 @@ final class EditorSession {
         selectedTabID = tabs[(idx - 1 + tabs.count) % tabs.count].id
     }
 
-    /// Safari ⌘1–⌘9: jump to the 1-indexed tab. ⌘9 jumps to the
-    /// last tab regardless of count (Safari quirk we mirror).
+    /// Safari quirk: ⌘9 jumps to the last tab regardless of count.
     func selectTab(at position: Int) {
         guard !tabs.isEmpty else { return }
         let idx = (position == 9) ? tabs.count - 1 : min(max(position - 1, 0), tabs.count - 1)
         selectedTabID = tabs[idx].id
     }
 
-    /// Toggle pin state. Pinning moves the tab to the leftmost pinned
-    /// position; unpinning moves it to the first unpinned position so
-    /// the visual order matches the partitioned invariant.
+    /// Pinning re-homes the tab so the `[pinned…, unpinned…]`
+    /// partition invariant stays intact.
     func togglePinned(_ id: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs[idx]
@@ -832,46 +705,37 @@ final class EditorSession {
         }
     }
 
-    /// Reorder via drag-and-drop. Clamps the destination so a pinned
-    /// tab can't be dragged into the unpinned region (and vice versa)
-    /// — keeps the partition invariant intact.
+    /// Drag-and-drop reorder. Clamps so a pinned tab can't cross
+    /// into the unpinned region (or vice versa) — partition stays
+    /// intact.
     func moveTab(id: UUID, to destination: Int) {
         guard let from = tabs.firstIndex(where: { $0.id == id }) else { return }
         let tab = tabs[from]
         let pinnedCount = tabs.partitionPointAfterPinned()
-        // Legal range for `tab`'s drop destination in the final
-        // array. Pinned tabs stay in [0, pinnedCount-1]; unpinned in
-        // [pinnedCount, count-1].
+        // Pinned: [0, pinnedCount-1]. Unpinned: [pinnedCount, count-1].
         let lowerBound = tab.isPinned ? 0 : pinnedCount
         let upperBound = tab.isPinned ? max(0, pinnedCount - 1) : max(0, tabs.count - 1)
         let clamped = min(max(destination, lowerBound), upperBound)
         guard clamped != from else { return }
         tabs.remove(at: from)
-        // Insertion index is the desired final position. SwiftUI's
-        // partition guarantees the array invariant is preserved.
         tabs.insert(tab, at: min(clamped, tabs.count))
     }
 
-    /// Pop the most-recently-closed record from the app-wide pool.
-    /// Caller is responsible for re-opening the URL (or rehydrating
-    /// the unsaved snapshot) — the session only stores the record.
     func popRecentlyClosed() -> ClosedTabRecord? {
         ClosedTabsStore.shared.popFirst()
     }
 
-    /// Append a freshly-loaded URL-backed tab without changing the
-    /// selection — used when "Open in Background" semantics are
-    /// desired in future.
+    /// Appends a tab without claiming focus — placeholder for an
+    /// eventual "Open in Background" gesture.
     func insertTab(_ tab: TabModel, activate: Bool = true) {
         let insertAt = tabs.partitionPointAfterPinned()
         tabs.insert(tab, at: insertAt)
         if activate { selectedTabID = tab.id }
     }
 
-    /// Remove the given tab from this session and hand it back so the
-    /// caller can re-home it (drag onto another window's tab bar, or
-    /// spawn a new window). Returns nil if removing would empty the
-    /// session — the session invariant requires ≥ 1 tab.
+    /// Hands the tab back so the caller can re-home it (cross-window
+    /// drag, new window). Returns nil if removing would violate the
+    /// ≥ 1 tab invariant.
     func detachTab(_ id: UUID) -> TabModel? {
         guard tabs.count > 1, let idx = tabs.firstIndex(where: { $0.id == id }) else { return nil }
         let tab = tabs.remove(at: idx)
@@ -881,10 +745,8 @@ final class EditorSession {
         return tab
     }
 
-    /// Adopt a tab detached from another session. Inserted just past
-    /// the pinned block (matching `newTab`) and becomes active. Does
-    /// NOT mutate the tab's identity — `id` stays stable across the
-    /// move so subsequent drags resolve through `session(containing:)`.
+    /// Adopt a detached tab. `id` is preserved so subsequent drags
+    /// resolve through `session(containing:)`.
     func attachTab(_ tab: TabModel) {
         let insertAt = tabs.partitionPointAfterPinned()
         tabs.insert(tab, at: insertAt)
@@ -895,15 +757,12 @@ final class EditorSession {
         ClosedTabsStore.shared.record(Self.snapshotRecord(of: tab))
     }
 
-    /// Build a closure record for a tab — extracted so the scene-
-    /// close path can use it too (snapshotting every still-open
-    /// tab when the window goes away).
+    /// Shared by the scene-close path, which snapshots every still-
+    /// open tab when the window goes away.
     static func snapshotRecord(of tab: TabModel) -> ClosedTabRecord {
-        // `document.text` lags the engine by up to 300 ms; for a
-        // close that fires inside the debounce window we'd archive
-        // the *pre-edit* text and silently lose whatever the user
-        // typed last. Pull the live buffer when the engine view is
-        // still around.
+        // `document.text` lags the engine by ~300 ms — pull the
+        // live buffer when the engine view is still around, or a
+        // close inside the debounce window archives pre-edit text.
         let liveText = tab.state.textView?.text ?? tab.document.text
         return ClosedTabRecord(
             displayName: tab.document.fileURL?.lastPathComponent ?? "Untitled",
@@ -914,23 +773,16 @@ final class EditorSession {
 }
 
 private extension Array where Element == TabModel {
-    /// Index just past the last pinned tab — i.e. the insertion
-    /// point that keeps `[pinned…, unpinned…]` partitioned. Touches
-    /// main-actor state on TabModel, so the helper itself is hopped.
+    /// Insertion point that keeps `[pinned…, unpinned…]` partitioned.
     @MainActor
     func partitionPointAfterPinned() -> Int {
         firstIndex(where: { !$0.isPinned }) ?? count
     }
 }
 
-/// Upper bound on file size for "rich" editing — syntax highlighting,
-/// fold discovery, and the markdown inline decorator. Files over this
-/// threshold open in plain-text mode for snappy typing.
-///
-/// `rawByteValue` is what's stored in `UserDefaults` so future schemes
-/// (per-file overrides, custom thresholds) can co-exist with the enum.
-/// Sentinel values: `-1` = unlimited (no skipping), `0` = never apply
-/// rich editing.
+/// Upper byte-size for syntax highlighting, fold discovery, and
+/// the markdown inline decorator. Files over the limit open in
+/// plain-text mode. Sentinels: `-1` = unlimited, `0` = never.
 enum SyntaxLimit: Int, CaseIterable, Identifiable {
     case never  = 0
     case up1MB  = 1_048_576
@@ -951,8 +803,6 @@ enum SyntaxLimit: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// `true` if a file of `byteCount` bytes should get the rich
-    /// editing treatment under this limit.
     func allows(byteCount: Int) -> Bool {
         switch self {
         case .never:  return false
@@ -962,16 +812,15 @@ enum SyntaxLimit: Int, CaseIterable, Identifiable {
         }
     }
 
-    /// Reads the user's current choice from `UserDefaults`. Unknown
-    /// stored values (forward-compat) fall back to `.up5MB`.
+    /// Unknown stored values (forward-compat) fall back to `.up5MB`.
     static func current() -> SyntaxLimit {
         let stored = UserDefaults.standard.integer(forKey: AppPreferenceKey.syntaxLimitBytes)
         return SyntaxLimit(rawValue: stored) ?? .up5MB
     }
 }
 
-/// What the app does on a fresh launch when SwiftUI didn't restore any
-/// prior windows. Restoration always wins when available.
+/// Cold-launch behaviour. SwiftUI restoration always wins when
+/// it has a prior window to bring back.
 enum LaunchBehavior: String, CaseIterable {
     case newBlank   = "newBlank"
     case openPicker = "openPicker"
@@ -984,8 +833,6 @@ enum LaunchBehavior: String, CaseIterable {
     }
 }
 
-/// Reusable weak reference box. Used by `SceneRouter` to keep a list
-/// of open sessions without retaining them.
 @MainActor
 final class WeakRef<T: AnyObject> {
     weak var ref: T?
