@@ -265,7 +265,7 @@ struct EditorTextView: UIViewRepresentable {
         }
     }
 
-    /// Five-line scrollable cushion below the last line so the
+    /// Ten-line scrollable cushion below the last line so the
     /// final line isn't pinned to the bottom of the window. Uses
     /// the current font's line height × multiplier — matches what
     /// the engine actually lays out, not a fixed point value. Set
@@ -275,7 +275,7 @@ struct EditorTextView: UIViewRepresentable {
     private func applyOverscroll(to textView: EditorEngine.TextView) {
         let font = state.font.uiFont(size: CGFloat(state.fontSize))
         let perLine = font.lineHeight * CGFloat(state.lineHeight)
-        let target: CGFloat = state.overscroll ? perLine * 5 : 0
+        let target: CGFloat = state.overscroll ? perLine * 10 : 0
         if abs(textView.contentInset.bottom - target) > 0.5 {
             textView.contentInset.bottom = target
         }

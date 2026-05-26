@@ -32,7 +32,7 @@ enum AppPreferenceKey {
     /// hard byte ceiling (`changeHistoryGutterByteLimit`) on top of
     /// the per-window preference.
     static let showChangeHistoryGutter = "showChangeHistoryGutter"
-    /// Extra scrollable space below the last line, sized as five
+    /// Extra scrollable space below the last line, sized as ten
     /// lines of the current font/line height. On by default — keeps
     /// the last line from being pinned to the bottom edge of the
     /// window.

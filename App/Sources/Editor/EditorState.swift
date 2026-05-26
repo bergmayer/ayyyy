@@ -46,7 +46,7 @@ final class EditorState {
     /// lookups grow with line count, and `Timing
     /// .changeHistoryGutterByteLimit` short-circuits past the ceiling.
     var showChangeHistoryGutter: Bool
-    /// Adds a 5-line scrollable cushion below the last line so it
+    /// Adds a 10-line scrollable cushion below the last line so it
     /// isn't pinned to the window's bottom edge.
     var overscroll: Bool
     var themeName: AppThemeName
