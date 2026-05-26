@@ -27,6 +27,14 @@ enum KeyboardAccessoryBar {
             if !(textView.inputAccessoryView is EditorAccessoryView) {
                 textView.inputAccessoryView = EditorAccessoryView(host: textView)
             }
+            // Suppress the iOS default `inputAssistantItem` strip
+            // (clipboard / history / edit actions glyphs) — iPhone
+            // would otherwise render it above our accessory, eating
+            // ~44 pt of vertical space and pushing our main row
+            // behind the keyboard.
+            let assistant = textView.inputAssistantItem
+            assistant.leadingBarButtonGroups = []
+            assistant.trailingBarButtonGroups = []
         } else {
             // iPad path — preserve the existing inputAssistantItem
             // approach until the Stage-Manager bleed-through is fixed.
@@ -465,18 +473,14 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     private func mainRowButtons() -> [AccessoryButton] {
         var buttons: [AccessoryButton] = []
 
-        // Dismiss keyboard
-        buttons.append(button(symbol: "chevron.down", label: "Hide Keyboard") { [weak self] in
-            self?.host?.resignFirstResponder()
-        })
-
-        // Escape — clears find / dismisses sheet / collapses selection
+        // Escape leads the row — clears armed modifiers / dismisses
+        // sheet / collapses selection.
         buttons.append(button(symbol: "escape", label: "Escape") { [weak self] in
             self?.handleEscape()
         })
 
-        // Sticky modifier cluster — tap arms; consumed by the next
-        // key on the iOS keyboard. Tapping a different modifier
+        // Sticky modifier cluster (⌃ ⌥ ⌘): tap arms; consumed by the
+        // next key on the iOS keyboard. Tapping a different modifier
         // disarms the others. Shift isn't a button: the iOS
         // keyboard's own shift handles capitalization and the
         // engine reads the resulting case to detect ⌘⇧ shortcuts.
@@ -490,17 +494,17 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         controlButton = control
         buttons.append(control)
 
-        let command = modifierButton(symbol: "command",
-                                     label: "Command",
-                                     keyPath: \.armedAccessoryCommand)
-        commandButton = command
-        buttons.append(command)
-
         let option = modifierButton(symbol: "option",
                                     label: "Option",
                                     keyPath: \.armedAccessoryOption)
         optionButton = option
         buttons.append(option)
+
+        let command = modifierButton(symbol: "command",
+                                     label: "Command",
+                                     keyPath: \.armedAccessoryCommand)
+        commandButton = command
+        buttons.append(command)
 
         // Line / document cursor jumps
         buttons.append(button(symbol: "arrow.left.to.line", label: "Start of Line") { [weak self] in
@@ -522,6 +526,12 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         // Drawer toggle
         buttons.append(button(symbol: "ellipsis", label: "Toggle Drawer") { [weak self] in
             self?.toggleDrawer()
+        })
+
+        // Dismiss keyboard, tail position so it doesn't take the
+        // prime leading slot.
+        buttons.append(button(symbol: "chevron.down", label: "Hide Keyboard") { [weak self] in
+            self?.host?.resignFirstResponder()
         })
 
         return buttons
