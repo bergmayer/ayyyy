@@ -4,59 +4,29 @@ import FileEncoding
 import LineEnding
 import LineSort
 
-/// iPadOS menu bar wiring.
-///
-/// Layout follows Mac/iPad conventions for a plain-text editor:
-///
-///   * **App** — Preferences, Command Palette
-///   * **Edit** (system-augmented) — system Cut/Copy/Paste/Undo/Redo plus
-///     Selection submenu and character-level edits (Transpose, delete-word,
-///     delete-to-EOL)
-///   * **Find** — find/replace, find next/prev, go-to, navigation history,
-///     bookmarks
-///   * **Format** — document-format submenus (encoding, line endings,
-///     syntax, indent) plus indent / outdent / toggle-comment for the
-///     selection
-///   * **View** — font sizing and display toggles (added to the system View
-///     menu, not a duplicate)
-///   * **Text** — line operations and content transforms
-///
-/// All button actions route through `CommandActions` so the command palette
-/// can share them.
+/// iPadOS menu-bar wiring. Every Button routes through
+/// `CommandActions` so the command palette can share the same code.
 struct EditorCommands: Commands {
 
     @Bindable private var bus = AppStateBus.shared
     @Environment(\.openWindow) private var openWindow
-    /// Drives the Snippets menu — reading the store as @State means
-    /// the menu rebuilds when snippets are added/removed/edited from
-    /// the Preferences pane.
+    /// `@State` so the menu rebuilds when the store mutates —
+    /// reading `.shared` inline from a ViewBuilder doesn't subscribe.
     @State private var snippetsStore = SnippetsStore.shared
-    /// Drives the JavaScript Transforms submenu. Same observation
-    /// reason as `snippetsStore` — reading `.shared` inline from a
-    /// menu ViewBuilder doesn't subscribe to changes, so the menu
-    /// would render the cached slot list until something unrelated
-    /// invalidated it.
     @State private var jsTransformStore = JSTransformStore.shared
-    /// Drives the Open Recent submenu — observation lets new entries
-    /// (and Clear Menu) reflect immediately without waiting for the
-    /// next unrelated menu rebuild.
     @State private var recentFilesStore = RecentFilesStore.shared
-    /// Pulled in via SwiftUI's @FocusedValue so menu actions that
-    /// trigger sheets fire against the actually-focused window, not
-    /// whichever scene happens to be in `AppStateBus.scenes.currentEditor`.
+    /// `@FocusedValue` so sheet triggers and tab commands hit the
+    /// foreground window, not whichever scene happens to be the
+    /// stale `currentEditor` on the bus.
     @FocusedValue(\.presentEditorSheet) private var focusedPresenter: SheetPresenter?
-    /// The foreground scene's `EditorSession`. Menu commands that
-    /// act on tabs should use this instead of
-    /// `AppStateBus.scenes.currentSession` — it never lags.
     @FocusedValue(\.focusedSession) private var focusedSession: EditorSession?
 
     private var editorState: EditorState? { bus.scenes.currentEditor }
     private var isEnabled: Bool { editorState != nil }
 
-    /// Sync `AppStateBus.scenes.currentSession` / `currentEditor`
-    /// to the focused scene. Called before any CommandAction that
-    /// reads the bus so the action targets the foreground window.
-    /// Cheap no-op when the bus already matches.
+    /// Resyncs the bus to the focused scene before any CommandAction
+    /// runs — otherwise actions can target a stale `currentEditor`
+    /// during iPad Stage Manager focus shifts.
     private func claimFocus() {
         guard let session = focusedSession else { return }
         if AppStateBus.shared.scenes.currentSession !== session {
@@ -68,13 +38,10 @@ struct EditorCommands: Commands {
         }
     }
 
-    /// Route a sheet trigger through the focused scene's presenter
-    /// if available; fall back to the bus directly when nothing has
-    /// claimed focus yet (cold-launch race only). Always claims focus
-    /// first so that any sheet content reading `bus.scenes.currentEditor`
-    /// / `currentSession` sees the foreground window — fixes the
-    /// "Clipboard History opens on the wrong window" class of bug for
-    /// every menu sheet at once.
+    /// Routes through the focused scene's presenter when available
+    /// and falls back to the bus on cold launch. Always claims focus
+    /// first — fixes the "Clipboard History opens on the wrong
+    /// window" class of bug for every menu sheet at once.
     private func presentSheet(_ sheet: EditorSheet) {
         claimFocus()
         if let focusedPresenter {
@@ -84,18 +51,13 @@ struct EditorCommands: Commands {
         }
     }
 
-    /// Run a CommandAction after claiming focus on the bus —
-    /// EVERY menu Button in this file should route its action
-    /// through here. Without it, the action reads
-    /// `bus.scenes.currentEditor` / `currentSession`, which can lag
-    /// behind real scene focus during iPad Stage Manager
-    /// transitions, Split View, and multi-window flips. The bug
-    /// surfaces as Markdown / Text / View commands targeting a
-    /// background window instead of the one the user is looking at.
+    /// Every menu Button in this file should route through here.
+    /// Without claimFocus the action reads a possibly-stale
+    /// `currentEditor` / `currentSession` and targets a background
+    /// window during iPad Stage Manager / Split View transitions.
     ///
-    /// Use as a Button's action: `Button("X", action: focused(CommandActions.x))`,
-    /// or for closures with arguments / inline logic:
-    /// `Button("X") { focused { CommandActions.x(arg) } }`.
+    /// Use as `Button("X", action: focused(CommandActions.x))`, or
+    /// for inline closures: `Button("X") { focused { … } }`.
     private func focused(_ action: @escaping @MainActor () -> Void) -> () -> Void {
         {
             claimFocus()
@@ -103,9 +65,6 @@ struct EditorCommands: Commands {
         }
     }
 
-    /// Closure variant — runs `action` after claimFocus. Useful when
-    /// the Button body has inline logic that can't be passed as a
-    /// bare function reference.
     private func focused(_ action: () -> Void) {
         claimFocus()
         action()
@@ -113,31 +72,20 @@ struct EditorCommands: Commands {
 
     var body: some Commands {
 
-        // (Previously replaced .windowArrangement / .windowSize with
-        // empty to suppress stale items — but we now add Tab items
-        // via `CommandGroup(after: .windowArrangement)` further down,
-        // and need the Window menu intact for them to attach to.)
-
-        // Suppress the system text-formatting CommandGroup (Bold /
-        // Italic / Underline) — those defaults claim ⌘B and ⌘I,
-        // which collides with our Markdown menu's wrappers and
-        // causes iPadOS to silently drop the Markdown menu via
-        // `_UIMenuBuilderError`. The Markdown menu owns those
-        // shortcuts in this app.
+        // Suppress the system text-formatting group (Bold / Italic /
+        // Underline) — its defaults claim ⌘B / ⌘I and would collide
+        // with our Markdown menu, dropping the latter via
+        // `_UIMenuBuilderError`.
         CommandGroup(replacing: .textFormatting) { }
 
-        // MARK: App — Preferences, Command Palette, and Tool Palette
-        // live under the application (Ayyyy) menu
+        // MARK: App — Preferences, Command Palette
 
-        // Two App-menu contributions wrapped together so they count
-        // as a single CommandsBuilder slot (the body's at the 10-
-        // child cap):
-        //   1. Replace iOS 26's auto-injected "Settings…" so there's
-        //      a single Preferences entry in the Ayyyy menu. The
-        //      system item would otherwise sit next to our manual
-        //      button and route to Settings.app (no Settings.bundle
-        //      defined here, so it lands on a blank page).
-        //   2. Add Command Palette… below the Preferences item.
+        // Grouped so they count as one CommandsBuilder slot (body is
+        // at the 10-child cap):
+        //   1. Replace iOS 26's auto-injected "Settings…" — without
+        //      a Settings.bundle, the system item routes to a blank
+        //      Settings.app page.
+        //   2. Add Command Palette… after the Preferences entry.
         Group {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { openWindow(id: SceneID.preferences.rawValue) }
@@ -152,24 +100,20 @@ struct EditorCommands: Commands {
         // MARK: File — New (new scene) / Open / Save / Save As
 
         CommandGroup(replacing: .newItem) {
-            // ⌘N → always a brand-new window. ⌘T → new tab in the
-            // current window (these always override the "Open / New
-            // documents in…" preference, per the user spec). iPhone
-            // can't host multiple windows, so the item is hidden there.
+            // ⌘N is always a fresh window, ⌘T always a new tab —
+            // they override the destination preference per spec.
+            // iPhone is single-window so the item is hidden.
             if DeviceIdiom.supportsMultipleWindows {
                 Button("New Window") { openWindow(id: SceneID.editor.rawValue) }
                     .keyboardShortcut("n")
             }
-            // No `.disabled(...)` here: SwiftUI evaluates the disable
-            // expression at menu-build time, so a brief currentSession
-            // = nil (between scene swaps) was leaving the item greyed
-            // out indefinitely. Fall back to opening a new window when
-            // no session is set instead.
+            // No `.disabled(...)`: SwiftUI evaluates the disable
+            // expression at menu-build time, so a transient nil
+            // session during a scene swap would leave the item
+            // greyed out indefinitely. Fall back to a new window.
             Button("New Tab") {
-                // Prefer the focused-scene session (always
-                // foreground) over the bus's currentSession (can
-                // lag on iPad Stage Manager). Fall back to a fresh
-                // window when no scene has focus yet.
+                // Prefer the focused session — the bus's
+                // currentSession can lag on iPad Stage Manager.
                 if let session = focusedSession ?? AppStateBus.shared.scenes.currentSession {
                     session.newTab()
                     CommandActions.offerDraftsIfAvailable()
@@ -178,16 +122,13 @@ struct EditorCommands: Commands {
                 }
             }
             .keyboardShortcut("t")
-            // Single "Open…" — always routes to a new window per
-            // user spec. No `.keyboardShortcut("o")`:
-            // `LSSupportsOpeningDocumentsInPlace = YES` makes
-            // iPadOS auto-inject its own ⌘O Open command (which
-            // also lands in our `.onOpenURL` and goes to a new
-            // window via the destination preference). Binding our
-            // button to ⌘O would duplicate the system's shortcut
-            // and `_UIMenuBuilderError` would drop the entire
-            // `.newItem` replacement. iPhone is single-window so
-            // "new window" collapses to "new tab" behavioural-wise.
+            // Unshortcut'd: `LSSupportsOpeningDocumentsInPlace = YES`
+            // makes iPadOS auto-inject its own ⌘O Open (which already
+            // routes through `.onOpenURL` → destination preference).
+            // Binding our button to ⌘O would collide and `_UIMenu-
+            // BuilderError` would drop the entire `.newItem`
+            // replacement. iPhone is single-window so "new window"
+            // collapses to "new tab" in practice.
             Button(DeviceIdiom.supportsMultipleWindows ? "Open…" : "Open in New Tab…") {
                 claimFocus()
                 if DeviceIdiom.supportsMultipleWindows {
@@ -196,12 +137,9 @@ struct EditorCommands: Commands {
                     CommandActions.presentFileBrowserInNewTab()
                 }
             }
-            // No `Menu("Open Recent")` here: iPadOS auto-injects
-            // its own Open Recent submenu when
-            // `LSSupportsOpeningDocumentsInPlace = YES` is set
-            // (system-wide handler registration). Our previous
-            // explicit Menu was rendering alongside, producing two
-            // identical-titled "Open Recent" entries.
+            // No `Menu("Open Recent")` here: iPadOS auto-injects one
+            // when `LSSupportsOpeningDocumentsInPlace = YES`, and the
+            // previous explicit Menu produced a duplicate entry.
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { AppStateBus.shared.editing.saveCurrentDocument?() }
@@ -220,11 +158,8 @@ struct EditorCommands: Commands {
             }
             .keyboardShortcut("h", modifiers: [.command, .option])
             .disabled(!isEnabled)
-            // Surfaces every unsaved draft from previous sessions
-            // (untitled OR URL-backed). Drafts persist until the
-            // user explicitly Discards or Saves; this entry is the
-            // app-lifetime way to reach the recovery sheet, in
-            // addition to the launch-time auto-popup.
+            // App-lifetime entry to the recovery sheet (drafts
+            // persist until the user explicitly Discards or Saves).
             Button("Recover Unsaved Drafts…") {
                 presentSheet(.draftsRecovery)
             }
@@ -271,51 +206,26 @@ struct EditorCommands: Commands {
                 .disabled(!isEnabled)
         }
 
-        // (Tabs menu moved to bottom of the body — Safari-style
-        // menu-bar order is View, Text, Markdown, Tabs.)
+        // MARK: Search
 
-        // MARK: Search — top-level menu, restored per user request.
-        // Items live in `findSubmenuContent` so the implementation
-        // can move between an Edit submenu and the menu bar without
-        // duplicating bodies.
-
+        // Items in `findSubmenuContent` so the same body can move
+        // between an Edit submenu and a top-level menu.
         CommandMenu("Search") {
             findSubmenuContent
         }
 
-        // (Markdown menu moved to AFTER View+Text — see below the
-        // `} // end Group { View + Text }` marker. Menu-bar order
-        // is: Ayyyy / File / Edit / View / Search / Text / Markdown
-        // / Tabs / Window / Help.)
-
-        // (Format menu folded into View ▸ Format — see
-        // `formatSubmenuContent` below the body.)
-
-        // MARK: View — populate iPadOS's auto-injected View menu.
+        // MARK: View — append to iPadOS's auto-injected View menu.
         //
-        // History on this slot is fraught:
-        //   * `CommandGroup(replacing: .toolbar)` ended up burying
-        //     our items inside a "Toolbar" submenu of View.
-        //   * `CommandMenu("View")` collided with the system-
-        //     injected View menu title and UIMenuBuilder silently
-        //     dropped ours.
+        // `CommandMenu("View")` would collide with the system title
+        // and lose. `CommandGroup(replacing: .toolbar)` buries items
+        // inside a Toolbar submenu. `CommandGroup(after: .sidebar)`
+        // lands at the View menu's top level, which is where the
+        // user looks.
         //
-        // `CommandGroup(after: .sidebar)` appends to the existing
-        // View menu right after the Show Sidebar toggle — items
-        // land at the View menu's top level, where the user looks
-        // for Bigger Font, Show Outline, Show File Information,
-        // etc. This is the documented placement for "add custom
-        // items to View on iPad."
-        //
-        // ALSO replace the system-injected Show Sidebar with our
-        // own toggle — iPadOS's default sidebar item drives the
-        // platform's sidebar API, but our sidebar lives on
-        // `state.sidebarOpen` (custom inline panel from
-        // OutlineSidebar.swift), so the system toggle did nothing.
+        // The system-injected Show Sidebar drives UIKit's sidebar
+        // API, but our outline panel reads `state.sidebarOpen` —
+        // replace it with a working Show Outline toggle.
         CommandGroup(replacing: .sidebar) {
-            // Replace the system-injected "Show Sidebar" with our
-            // "Show Outline" toggle — same panel, single name. Older
-            // builds had both items, which surfaced the same UI.
             Button("Show Outline", action: focused(CommandActions.showOutline))
                 .keyboardShortcut("s", modifiers: [.command, .control])
                 .disabled(!isEnabled)
@@ -334,14 +244,9 @@ struct EditorCommands: Commands {
 
         CommandMenu("Text") {
             Group {
-                // Surround Selection — common wraps as direct menu
-                // items so the user picks the bracket / quote
-                // family in one tap. A dialog felt heavy for what
-                // amounts to "wrap selection in one of nine fixed
-                // patterns" — every preset is one click.
+                // Each preset is one tap — a dialog felt heavy for
+                // nine fixed wraps.
                 Menu("Surround Selection") {
-                    // Bold / Italic at the top — most common wraps
-                    // for prose editing.
                     Button("Bold **…**")       { focused { CommandActions.surroundSelection(prefix: "**", suffix: "**") } }
                     Button("Italic _…_")       { focused { CommandActions.surroundSelection(prefix: "_",  suffix: "_") } }
                     Divider()
@@ -357,10 +262,8 @@ struct EditorCommands: Commands {
 
                 Divider()
 
-                // Everything line-oriented under one roof — single-
-                // line ops (move/dup/delete) live at the top of the
-                // submenu since they're the most-used; transforms
-                // (sort/reverse/etc.) follow.
+                // Most-used line ops (move/dup/delete) live at the
+                // top; transforms (sort/reverse/etc.) follow.
                 Menu("Lines") {
                     Button("Move Line Up", action: focused(CommandActions.moveLineUp))
                         .keyboardShortcut(.upArrow, modifiers: .option)
@@ -386,9 +289,6 @@ struct EditorCommands: Commands {
                     Button("Process Lines Containing…", action: focused(CommandActions.presentProcessLines))
                 }
 
-                // Selection transforms — case changes followed by
-                // encoding transforms, with Reverse Selection at the
-                // tail since it's the rare action of the bunch.
                 Menu("Transform") {
                     Button("UPPERCASE", action: focused(CommandActions.uppercase))
                     Button("lowercase", action: focused(CommandActions.lowercase))
@@ -417,10 +317,6 @@ struct EditorCommands: Commands {
                     Button("Reverse Selection", action: focused(CommandActions.reverseSelection))
                 }
 
-                // Character-level cleanups — whitespace, quotes,
-                // gremlins. Trim Trailing Whitespace lives here now
-                // (was duplicated under Lines); whitespace fixes
-                // belong with the rest of the cleanup family.
                 Menu("Cleanup") {
                     Menu("Whitespace") {
                         Button("Trim Trailing Whitespace", action: focused(CommandActions.trimTrailingWhitespace))
@@ -479,18 +375,15 @@ struct EditorCommands: Commands {
                     jsTransformItems
                 }
 
-                // Markdown moved under Text as a submenu — saves a
-                // top-level menu bar slot without losing any commands.
-                // Show Outline and Markdown Preview are also reachable
-                // from the View menu since they're view-state.
+                // Markdown lives under Text — saves a top-level menu
+                // slot. Show Outline / Preview are also in View since
+                // they're view-state.
                 Menu("Markdown") { markdownSubmenuContent }
             }
             .disabled(!isEnabled)
         }
 
-        // MARK: Tabs → Window menu. The Tabs top-level menu was
-        // dropped; its actions now live under the system Window
-        // menu via `CommandGroup(after: .windowList)`.
+        // MARK: Tabs (attached to the system Window menu)
 
         CommandGroup(after: .windowArrangement) {
             Button("Show All Tabs", action: focused(CommandActions.showTabSwitcher))
@@ -525,8 +418,7 @@ struct EditorCommands: Commands {
 
     // MARK: - Markdown menu
 
-    /// Items that used to live in the top-level Format menu. Now
-    /// rendered inside View ▸ Format for the slim menu-bar spec.
+    /// View ▸ Format submenu body.
     @ViewBuilder
     private var formatSubmenuContent: some View {
         Group {
@@ -564,16 +456,12 @@ struct EditorCommands: Commands {
                 Toggle("Check Spelling While Typing",
                        isOn: bindingFor(\.spellCheck, defaultsKey: AppPreferenceKey.spellCheck))
                 Divider()
-                // Manual one-shot check — works even with the live
-                // toggle above turned off, so the user can audit a
-                // document on demand without leaving the live
-                // squiggles on for the rest of the session.
-                // No keyboard shortcuts on the spell-check items:
-                // ⌘; collides with Command Palette and ⇧⌘' collides
-                // with Markdown ▸ Blockquote. iPadOS drops the
-                // whole Spelling submenu via `_UIMenuBuilderError`
-                // on any keyboard conflict, so these stay menu-only
-                // / palette-only.
+                // Unshortcut'd: ⌘; collides with Command Palette and
+                // ⇧⌘' with Markdown ▸ Blockquote — either would drop
+                // the whole Spelling submenu via `_UIMenuBuilderError`.
+                // Manual check stays useful even when the live
+                // toggle is off (audit on demand without the
+                // squiggles).
                 Button("Check Document Spelling", action: focused(CommandActions.highlightAllMisspellings))
                 Button("Clear Spelling Marks", action: focused(CommandActions.clearMisspellingHighlights))
                 Divider()
@@ -624,8 +512,8 @@ struct EditorCommands: Commands {
 
     @ViewBuilder
     private var viewMenuFoldItems: some View {
-        // Fold at Cursor uses ⌃⌘F (matches Xcode's Code Folding
-        // toggle convention; ⌥⌘F is Find and Replace).
+        // ⌃⌘F matches Xcode's Code Folding convention; ⌥⌘F is taken
+        // by Find and Replace.
         Button("Fold at Cursor", action: focused(CommandActions.toggleFoldAtCursor))
             .keyboardShortcut("f", modifiers: [.command, .control])
             .disabled(!isEnabled)
@@ -648,40 +536,22 @@ struct EditorCommands: Commands {
             .keyboardShortcut("e", modifiers: [.command, .option])
             .disabled(!isEnabled)
         Divider()
-        // Information panels — File Information surfaces document
-        // metadata; it belongs with the View menu's other view-state
-        // controls. (Show Outline lives at the top of the View menu
-        // — `CommandGroup(replacing: .sidebar)` above — as the same
-        // single item, since the sidebar IS the outline panel.)
         Button("Show File Information", action: focused(CommandActions.toggleInspector))
             .keyboardShortcut("i", modifiers: [.command, .option])
             .disabled(!isEnabled)
-        // Character Inspector belongs with the other view-state /
-        // inspector entries — it surfaces the Unicode breakdown of
-        // the current selection. Previously buried in Format ▸
-        // Text Transformations, which was the wrong home.
         Button("Character Inspector…", action: focused { presentSheet(.characterInspector) })
             .keyboardShortcut("i", modifiers: [.command, .control])
             .disabled(!isEnabled)
         Divider()
-        // Bookmarks moved here from the Search menu — slots are a
-        // view-state concern, and grouping the line-level actions
-        // (copy/cut/keep/delete) with slot management gives the user
-        // one place to look for everything bookmark-related.
         Menu("Bookmarks") { bookmarkMenuItems }
             .disabled(!isEnabled)
         Divider()
-        // Format submenu — encoding, line endings, language, indent,
-        // list-conversion, spelling. Pulled out of a separate
-        // top-level Format menu to keep the nine-menu spec.
         Menu("Format") { formatSubmenuContent }
             .disabled(!isEnabled)
     }
 
-    /// Markdown menu items, extracted so the Text ▸ Markdown
-    /// submenu and any future palette / shortcut wiring share one
-    /// source. Show Outline and Preview live in the View menu
-    /// instead — they're view-state, not text-edit operations.
+    /// Extracted so the submenu and any future palette / shortcut
+    /// wiring share one source.
     @ViewBuilder
     private var markdownSubmenuContent: some View {
         Group {
@@ -724,8 +594,8 @@ struct EditorCommands: Commands {
                 .keyboardShortcut("k")
             Button("Image…", action: focused(CommandActions.markdownImage))
                 .keyboardShortcut("k", modifiers: [.command, .option])
-            // ⇧⌘0 collides with system "Default Zoom"; ⌃⌘F is taken
-            // by Fold at Cursor; Footnote takes ⌥⌘N.
+            // ⌥⌘N — ⇧⌘0 collides with Default Zoom, ⌃⌘F with Fold
+            // at Cursor.
             Button("Footnote", action: focused(CommandActions.markdownFootnote))
                 .keyboardShortcut("n", modifiers: [.command, .option])
             Button("Organize Footnotes…") { presentSheet(.organizeFootnotes) }
@@ -737,17 +607,14 @@ struct EditorCommands: Commands {
         }
     }
 
-    /// Items that used to live in the top-level Search menu. Now
-    /// rendered inside Edit ▸ Find so the menu bar stays at the
-    /// nine-menu spec (Ayyyy/File/Edit/View/Text/Markdown/Tabs/
-    /// Window/Help).
+    /// Body of the Search menu — pulled out so the same items can
+    /// live under Edit ▸ Find too.
     @ViewBuilder
     private var findSubmenuContent: some View {
         Group {
             Button("Find…") {
-                // presentSheet already calls claimFocus; mirror that
-                // here so the seed selection comes from the focused
-                // editor too.
+                // Mirror presentSheet's claimFocus so the seed
+                // selection comes from the focused editor.
                 focused {
                     CommandActions.seedFindFromSelection()
                     presentSheet(.findReplace)
@@ -756,21 +623,14 @@ struct EditorCommands: Commands {
             .keyboardShortcut("f")
             Button("Multi-File Search…", action: focused(CommandActions.presentMultiFileSearch))
                 .keyboardShortcut("f", modifiers: [.command, .shift])
-            // (Find Next / Previous / Find Incrementally / Find
-            // First removed from this menu — they're controls in
-            // the Find dialog itself now.)
         }
 
         Divider()
 
         Group {
-            // (Jump to Selection / Reveal Selection Start / End all
-            // removed — Reveal items duplicated Center Line for the
-            // common case and were rarely used.)
             Button("Go to Line…") { presentSheet(.goToLine) }
                 .keyboardShortcut("l")
-            // ⇧⌘\ is taken by Show All Tabs (Safari convention).
-            // Match-bracket gets ⌃⌘B (a common editor choice).
+            // ⌃⌘B — ⇧⌘\ is Show All Tabs.
             Button("Go to Matching Bracket", action: focused(CommandActions.goToMatchingBracket))
                 .keyboardShortcut("b", modifiers: [.command, .control])
             Button("Center Line", action: focused(CommandActions.centerLine))
@@ -779,33 +639,18 @@ struct EditorCommands: Commands {
         Divider()
 
         Group {
-            // (Tools submenu retired — Pattern Playground was its
-            // last surviving item, and a single-item submenu hides
-            // more than it organizes.)
             Divider()
 
             Button("Back", action: focused(CommandActions.positionBack))
                 .keyboardShortcut(.leftArrow,  modifiers: [.command, .control])
             Button("Forward", action: focused(CommandActions.positionForward))
                 .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
-
-            // (Bookmarks moved to the View menu — combines the
-            // slot-level set/jump/clear with the line-level
-            // copy/cut/keep/delete actions in one home.)
         }
     }
 
-    // (Dead `markdownMenu` property removed — the actual Markdown
-    // menu is inlined in `body` at line ~496 to avoid the
-    // @CommandsBuilder-property render flakiness on iPadOS, and
-    // because two CommandMenus with identical titles + items would
-    // cause UIKit's MenuBuilder to drop one of them.)
-
-    /// Lists every slot 1–10 with its shortcut (⌃⌥1…⌃⌥9, ⌃⌥0 = slot
-    /// 10). Inactive (empty) slots are still visible — disabled — so
-    /// the user can see which shortcuts are available to assign.
-    /// Reads from `JSTransformStore.shared` directly each menu build
-    /// (which is on demand, so it picks up edits live).
+    /// Inactive slots stay visible (disabled) so the user can see
+    /// which shortcuts are open to assign. Reads `.shared` per build
+    /// so edits propagate live.
     @ViewBuilder
     private var jsTransformItems: some View {
         let slots = jsTransformStore.slots
@@ -821,8 +666,7 @@ struct EditorCommands: Commands {
     }
 
     private func jsShortcutKey(for id: Int) -> KeyEquivalent {
-        // Slots 1–9 take ⌃⌥1 … ⌃⌥9. Slot 10 takes ⌃⌥0 (same scheme
-        // the tab-jump shortcuts use).
+        // Slot 10 → "0", matching the tab-jump scheme.
         switch id {
         case 10: return "0"
         default: return KeyEquivalent(Character("\(id)"))
@@ -896,9 +740,8 @@ struct EditorCommands: Commands {
         } else {
             ForEach(recents, id: \.self) { url in
                 Button(url.lastPathComponent) {
-                    // Route through the same window/tab pipeline as
-                    // File → Open so a recent file lands in a new
-                    // window (not in place of the current buffer).
+                    // Same pipeline as File → Open so a recent file
+                    // lands in a new window, not in place.
                     if let route = AppStateBus.shared.scenes.routeOpenURL {
                         route(url)
                     } else {
@@ -938,9 +781,6 @@ struct EditorCommands: Commands {
             }
         }
         Divider()
-        // Line-level operations on bookmarked rows — moved here from
-        // the old Text ▸ Lines ▸ Bookmarked Lines submenu so every
-        // bookmark-related action lives in one place.
         Button("Copy Bookmarked Lines", action: focused(CommandActions.copyBookmarkedLines))
         Button("Cut Bookmarked Lines", action: focused(CommandActions.cutBookmarkedLines))
         Button("Keep Only Bookmarked Lines", action: focused(CommandActions.keepBookmarkedLinesOnly))
@@ -998,13 +838,10 @@ struct EditorCommands: Commands {
         ]
     }
 
-    /// Builds a binding for a Bool on the active editor state. If a
-    /// `defaultsKey` is supplied, the new value also writes back to
-    /// UserDefaults so the change survives relaunch. When no editor
-    /// is currently focused (cold launch / window swap), the getter
-    /// falls back to the persisted preference rather than `false` —
-    /// otherwise the toggle would visually lie about whether the
-    /// pref is on.
+    /// `defaultsKey` writes back to UserDefaults so the change
+    /// survives relaunch. The getter falls back to the stored pref
+    /// on cold launch — without that, the toggle would visually lie
+    /// about whether the pref is on.
     private func bindingFor(
         _ keyPath: ReferenceWritableKeyPath<EditorState, Bool>,
         defaultsKey: String? = nil
