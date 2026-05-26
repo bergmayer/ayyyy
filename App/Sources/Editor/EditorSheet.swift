@@ -33,7 +33,6 @@ enum EditorSheet: Identifiable {
     /// preview actually appears.
     case markdownPreview
     case organizeFootnotes
-    case accessoryKeyboardSettings
 
     var id: String {
         switch self {
@@ -64,7 +63,6 @@ enum EditorSheet: Identifiable {
         case .markdownTable:         return "markdownTable"
         case .markdownPreview:       return "markdownPreview"
         case .organizeFootnotes:     return "organizeFootnotes"
-        case .accessoryKeyboardSettings: return "accessoryKeyboardSettings"
         }
     }
 }

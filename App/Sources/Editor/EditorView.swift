@@ -958,8 +958,6 @@ struct EditorView: View {
             MarkdownPreviewSheet()
         case .organizeFootnotes:
             OrganizeFootnotesSheet()
-        case .accessoryKeyboardSettings:
-            AccessoryKeyboardSettingsSheet()
         }
     }
 

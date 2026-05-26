@@ -404,8 +404,20 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         )
         self.mainRow = AccessoryRow(style: .main)
         self.drawerRow = AccessoryRow(style: .drawer)
-        super.init(frame: CGRect(x: 0, y: 0, width: 320, height: 92),
-                   inputViewStyle: .keyboard)
+        let initialHeight = drawerOpen ? Self.totalHeightOpen : Self.totalHeightClosed
+        // `.default` style + an explicit background colour gives a
+        // flush fit against the keyboard. `.keyboard` style adds a
+        // blur material with internal padding that introduces a
+        // ~20 pt gap above the keys.
+        super.init(frame: CGRect(x: 0, y: 0,
+                                 width: UIScreen.main.bounds.width,
+                                 height: initialHeight),
+                   inputViewStyle: .default)
+        backgroundColor = UIColor { trait in
+            trait.userInterfaceStyle == .dark
+                ? UIColor.secondarySystemBackground
+                : UIColor(white: 0.82, alpha: 1.0)
+        }
         allowsSelfSizing = true
         autoresizingMask = [.flexibleWidth]
         buildRows()
@@ -463,12 +475,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         // Dismiss keyboard
         buttons.append(button(symbol: "chevron.down", label: "Hide Keyboard") { [weak self] in
             self?.host?.resignFirstResponder()
-        })
-
-        // Tab switcher
-        buttons.append(button(symbol: "square.stack", label: "Tab Switcher") { [weak self] in
-            self?.claimFocus()
-            CommandActions.showTabSwitcher()
         })
 
         // Escape — clears find / dismisses sheet / collapses selection
@@ -531,11 +537,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
             self?.toggleDrawer()
         })
 
-        // Accessory settings
-        buttons.append(button(symbol: "gearshape", label: "Keyboard Settings") { [weak self] in
-            self?.presentSettings()
-        })
-
         return buttons
     }
 
@@ -568,10 +569,9 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     }
 
     private func drawerRowButtons() -> [AccessoryButton] {
-        // Order roughly mirrors the rootshell drawer: modifier
-        // placeholders → punctuation → action keys.
+        // Pure character palette — every entry inserts its literal
+        // glyph at the cursor.
         let chars: [(String, String)] = [
-            // Punctuation palette useful for code editing.
             ("`", "Backtick"), ("~", "Tilde"), ("^", "Caret"),
             ("_", "Underscore"), ("\\", "Backslash"), ("|", "Pipe"),
             ("(", "Left Paren"), (")", "Right Paren"),
@@ -586,29 +586,12 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
             (";", "Semicolon"), (":", "Colon")
         ]
 
-        var buttons: [AccessoryButton] = chars.map { (glyph, label) in
+        return chars.map { (glyph, label) in
             button(title: glyph, label: label) { [weak self] in
                 guard let host = self?.host else { return }
                 host.replace(host.selectedRange, withText: glyph)
             }
         }
-
-        // Trailing action keys — paste + the view toggles that
-        // matter for an editor (the SSH-only ones from rootshell
-        // are dropped).
-        buttons.append(button(symbol: "doc.on.clipboard", label: "Paste") { [weak self] in
-            guard let host = self?.host, let clip = UIPasteboard.general.string else { return }
-            host.replace(host.selectedRange, withText: clip)
-        })
-        buttons.append(button(symbol: "rectangle.topthird.inset.filled", label: "Toggle Tab Bar") { [weak self] in
-            self?.claimFocus()
-            UserDefaults.standard.set(
-                !UserDefaults.standard.bool(forKey: AppPreferenceKey.showToolbar),
-                forKey: AppPreferenceKey.showToolbar
-            )
-        })
-
-        return buttons
     }
 
     // MARK: Actions
@@ -640,11 +623,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         if let host, host.selectedRange.length > 0 {
             host.selectedRange = NSRange(location: host.selectedRange.location, length: 0)
         }
-    }
-
-    private func presentSettings() {
-        claimFocus()
-        AppStateBus.shared.editing.presentedSheet = .accessoryKeyboardSettings
     }
 
     private func claimFocus() {
