@@ -33,59 +33,64 @@ struct SpellCheckSheet: View {
         return cursor
     }
 
+    private var changeDisabled: Bool {
+        replacement.isEmpty || replacement == currentWord
+    }
+
     var body: some View {
         NavigationStack {
-            Form {
-                if finished {
-                    Section {
-                        Label("Spell check complete.", systemImage: "checkmark.seal")
-                            .foregroundStyle(.green)
-                    }
-                } else if currentRange == nil {
-                    Section {
-                        ProgressView("Scanning…")
-                    }
-                } else {
-                    Section("Not in dictionary") {
-                        Text(currentWord)
-                            .font(.title3.monospaced())
-                            .foregroundStyle(.red)
-                        TextField("Replacement", text: $replacement)
-                            .font(.body.monospaced())
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                    }
-                    Section("Suggestions") {
-                        if suggestions.isEmpty {
-                            Text("(no suggestions)")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(suggestions, id: \.self) { sug in
-                                Button {
-                                    replacement = sug
-                                } label: {
-                                    HStack {
-                                        Text(sug)
-                                            .font(.body.monospaced())
-                                            .foregroundStyle(.primary)
-                                        Spacer()
-                                        if sug == replacement {
-                                            Image(systemName: "checkmark")
-                                                .foregroundStyle(.tint)
+            VStack(spacing: 0) {
+                if !finished, currentRange != nil {
+                    actionBar
+                        .padding(.horizontal)
+                        .padding(.vertical, 12)
+                        .background(.bar)
+                }
+                Form {
+                    if finished {
+                        Section {
+                            Label("Spell check complete.", systemImage: "checkmark.seal")
+                                .foregroundStyle(.green)
+                        }
+                    } else if currentRange == nil {
+                        Section {
+                            ProgressView("Scanning…")
+                        }
+                    } else {
+                        Section("Not in dictionary") {
+                            Text(currentWord)
+                                .font(.title3.monospaced())
+                                .foregroundStyle(.red)
+                            TextField("Replacement", text: $replacement)
+                                .font(.body.monospaced())
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                        }
+                        Section("Suggestions") {
+                            if suggestions.isEmpty {
+                                Text("(no suggestions)")
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(suggestions, id: \.self) { sug in
+                                    Button {
+                                        replacement = sug
+                                    } label: {
+                                        HStack {
+                                            Text(sug)
+                                                .font(.body.monospaced())
+                                                .foregroundStyle(.primary)
+                                            Spacer()
+                                            if sug == replacement {
+                                                Image(systemName: "checkmark")
+                                                    .foregroundStyle(.tint)
+                                            }
                                         }
+                                        .contentShape(.rect)
                                     }
-                                    .contentShape(.rect)
+                                    .buttonStyle(.plain)
                                 }
-                                .buttonStyle(.plain)
                             }
                         }
-                    }
-                    Section {
-                        Button("Change") { change() }
-                            .disabled(replacement.isEmpty || replacement == currentWord)
-                        Button("Ignore") { advance() }
-                        Button("Ignore All") { ignoreAll() }
-                        Button("Learn") { learn() }
                     }
                 }
             }
@@ -98,6 +103,26 @@ struct SpellCheckSheet: View {
             }
             .onAppear { findNext(from: startLocation) }
         }
+    }
+
+    /// Four-button action row pinned to the top of the sheet —
+    /// `.bordered` so they read as real controls, not Form-row
+    /// text links. Change is prominent because it's the load-bearing
+    /// action; the others are siblings.
+    private var actionBar: some View {
+        HStack(spacing: 8) {
+            Button("Change") { change() }
+                .buttonStyle(.borderedProminent)
+                .disabled(changeDisabled)
+            Button("Ignore") { advance() }
+                .buttonStyle(.bordered)
+            Button("Ignore All") { ignoreAll() }
+                .buttonStyle(.bordered)
+            Button("Learn") { learn() }
+                .buttonStyle(.bordered)
+        }
+        .controlSize(.large)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Locates the next misspelling, updates state, and scrolls the
