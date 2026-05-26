@@ -89,11 +89,11 @@ struct EditorCommands: Commands {
         Group {
             CommandGroup(replacing: .appSettings) {
                 Button("Settings…") { openWindow(id: SceneID.preferences.rawValue) }
-                    .keyboardShortcut(",", modifiers: .command)
+                    .keyboardShortcut(AppShortcut.preferences)
             }
             CommandGroup(after: .appInfo) {
                 Button("Command Palette…") { presentSheet(.commandPalette) }
-                    .keyboardShortcut(";", modifiers: .command)
+                    .keyboardShortcut(AppShortcut.commandPalette)
             }
         }
 
@@ -105,7 +105,7 @@ struct EditorCommands: Commands {
             // iPhone is single-window so the item is hidden.
             if DeviceIdiom.supportsMultipleWindows {
                 Button("New Window") { openWindow(id: SceneID.editor.rawValue) }
-                    .keyboardShortcut("n")
+                    .keyboardShortcut(AppShortcut.newWindow)
             }
             // No `.disabled(...)`: SwiftUI evaluates the disable
             // expression at menu-build time, so a transient nil
@@ -121,7 +121,7 @@ struct EditorCommands: Commands {
                     openWindow(id: SceneID.editor.rawValue)
                 }
             }
-            .keyboardShortcut("t")
+            .keyboardShortcut(AppShortcut.newTab)
             // Unshortcut'd: `LSSupportsOpeningDocumentsInPlace = YES`
             // makes iPadOS auto-inject its own ⌘O Open (which already
             // routes through `.onOpenURL` → destination preference).
@@ -143,10 +143,10 @@ struct EditorCommands: Commands {
         }
         CommandGroup(replacing: .saveItem) {
             Button("Save") { AppStateBus.shared.editing.saveCurrentDocument?() }
-                .keyboardShortcut("s")
+                .keyboardShortcut(AppShortcut.save)
                 .disabled(!isEnabled)
             Button("Save As…") { AppStateBus.shared.pickers.pending = .saveAs }
-                .keyboardShortcut("s", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.saveAs)
                 .disabled(!isEnabled)
             Divider()
             Button("Revert to Saved") {
@@ -156,7 +156,7 @@ struct EditorCommands: Commands {
             Button("Show Revisions…") {
                 presentSheet(.revisions)
             }
-            .keyboardShortcut("h", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.showRevisions)
             .disabled(!isEnabled)
             // App-lifetime entry to the recovery sheet (drafts
             // persist until the user explicitly Discards or Saves).
@@ -174,7 +174,7 @@ struct EditorCommands: Commands {
             Divider()
 
             Button("Clipboard History…") { presentSheet(.clipboardHistory) }
-                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.clipboardHistory)
 
             Divider()
 
@@ -190,19 +190,19 @@ struct EditorCommands: Commands {
             Divider()
 
             Button("Transpose Characters", action: focused(CommandActions.transposeCharacters))
-                .keyboardShortcut("t", modifiers: .control)
+                .keyboardShortcut(AppShortcut.transposeChars)
                 .disabled(!isEnabled)
             Button("Delete to End of Line", action: focused(CommandActions.deleteToEndOfLine))
-                .keyboardShortcut("k", modifiers: .control)
+                .keyboardShortcut(AppShortcut.deleteToEOL)
                 .disabled(!isEnabled)
             Button("Delete Word Backward", action: focused(CommandActions.deleteWordBackward))
-                .keyboardShortcut(.delete, modifiers: .option)
+                .keyboardShortcut(AppShortcut.deleteWordBack)
                 .disabled(!isEnabled)
             Button("Delete Word Forward", action: focused(CommandActions.deleteWordForward))
-                .keyboardShortcut(.deleteForward, modifiers: .option)
+                .keyboardShortcut(AppShortcut.deleteWordFwd)
                 .disabled(!isEnabled)
             Button("Join Lines", action: focused(CommandActions.joinLines))
-                .keyboardShortcut("j", modifiers: .control)
+                .keyboardShortcut(AppShortcut.joinLines)
                 .disabled(!isEnabled)
         }
 
@@ -227,7 +227,7 @@ struct EditorCommands: Commands {
         // replace it with a working Show Outline toggle.
         CommandGroup(replacing: .sidebar) {
             Button("Show Outline", action: focused(CommandActions.showOutline))
-                .keyboardShortcut("s", modifiers: [.command, .control])
+                .keyboardShortcut(AppShortcut.showOutline)
                 .disabled(!isEnabled)
         }
         CommandGroup(after: .sidebar) {
@@ -266,13 +266,13 @@ struct EditorCommands: Commands {
                 // top; transforms (sort/reverse/etc.) follow.
                 Menu("Lines") {
                     Button("Move Line Up", action: focused(CommandActions.moveLineUp))
-                        .keyboardShortcut(.upArrow, modifiers: .option)
+                        .keyboardShortcut(AppShortcut.moveLineUp)
                     Button("Move Line Down", action: focused(CommandActions.moveLineDown))
-                        .keyboardShortcut(.downArrow, modifiers: .option)
+                        .keyboardShortcut(AppShortcut.moveLineDown)
                     Button("Duplicate Line", action: focused(CommandActions.duplicateLine))
-                        .keyboardShortcut("d", modifiers: [.command, .shift])
+                        .keyboardShortcut(AppShortcut.duplicateLine)
                     Button("Delete Line", action: focused(CommandActions.deleteLine))
-                        .keyboardShortcut("k", modifiers: [.command, .shift])
+                        .keyboardShortcut(AppShortcut.deleteLine)
                     Divider()
                     Button("Sort Lines…", action: focused(CommandActions.sortLines))
                     Button("Reverse Lines", action: focused(CommandActions.reverseLines))
@@ -358,7 +358,7 @@ struct EditorCommands: Commands {
 
                 Menu("Snippets") {
                     Button("Insert Snippet…", action: focused(CommandActions.presentSnippetPicker))
-                        .keyboardShortcut("e", modifiers: [.command, .shift])
+                        .keyboardShortcut(AppShortcut.insertSnippet)
                     if !snippetsStore.snippets.isEmpty {
                         Divider()
                         ForEach(snippetsStore.snippets) { snippet in
@@ -387,16 +387,16 @@ struct EditorCommands: Commands {
 
         CommandGroup(after: .windowArrangement) {
             Button("Show All Tabs", action: focused(CommandActions.showTabSwitcher))
-                .keyboardShortcut("\\", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.showAllTabs)
             Button("Close Tab", action: focused(CommandActions.closeActiveTab))
-                .keyboardShortcut("w")
+                .keyboardShortcut(AppShortcut.closeTab)
             Button("Reopen Last Closed Tab", action: focused(CommandActions.reopenLastClosedTab))
-                .keyboardShortcut("t", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.reopenLastClosed)
             Divider()
             Button("Next Tab", action: focused(CommandActions.nextTab))
-                .keyboardShortcut("]", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.nextTab)
             Button("Previous Tab", action: focused(CommandActions.previousTab))
-                .keyboardShortcut("[", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.previousTab)
             Divider()
             Button("Pin / Unpin Tab", action: focused(CommandActions.pinCurrentTab))
             Button("Close Other Tabs", action: focused(CommandActions.closeOtherTabs))
@@ -434,9 +434,9 @@ struct EditorCommands: Commands {
 
             Menu("Indent") { indentMenuItems }
             Button("Indent Selection", action: focused(CommandActions.indentSelection))
-                .keyboardShortcut("]")
+                .keyboardShortcut(AppShortcut.indentSelection)
             Button("Outdent Selection", action: focused(CommandActions.outdentSelection))
-                .keyboardShortcut("[")
+                .keyboardShortcut(AppShortcut.outdentSelection)
         }
         Divider()
         Group {
@@ -475,26 +475,26 @@ struct EditorCommands: Commands {
     @ViewBuilder
     private var viewMenuFontItems: some View {
         Button("Bigger Font", action: focused(CommandActions.increaseFontSize))
-            .keyboardShortcut("+", modifiers: .command)
+            .keyboardShortcut(AppShortcut.biggerFont)
             .disabled(!isEnabled)
         Button("Smaller Font", action: focused(CommandActions.decreaseFontSize))
-            .keyboardShortcut("-", modifiers: .command)
+            .keyboardShortcut(AppShortcut.smallerFont)
             .disabled(!isEnabled)
         Button("Reset Font Size", action: focused(CommandActions.resetFontSize))
-            .keyboardShortcut("0", modifiers: .command)
+            .keyboardShortcut(AppShortcut.resetFontSize)
             .disabled(!isEnabled)
     }
 
     @ViewBuilder
     private var viewMenuToggleItems: some View {
         Toggle("Show Line Numbers", isOn: bindingFor(\.showLineNumbers, defaultsKey: AppPreferenceKey.showLineNumbers))
-            .keyboardShortcut("l", modifiers: [.command, .shift])
+            .keyboardShortcut(AppShortcut.showLineNumbers)
             .disabled(!isEnabled)
         Toggle("Wrap Lines", isOn: bindingFor(\.wrapLines, defaultsKey: AppPreferenceKey.wrapLines))
-            .keyboardShortcut("w", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.wrapLines)
             .disabled(!isEnabled)
         Toggle("Show Invisibles", isOn: bindingFor(\.showInvisibles, defaultsKey: AppPreferenceKey.showInvisibles))
-            .keyboardShortcut("i", modifiers: [.command, .shift])
+            .keyboardShortcut(AppShortcut.showInvisibles)
             .disabled(!isEnabled)
         Toggle("Show Page Guide", isOn: bindingFor(\.showPageGuide, defaultsKey: AppPreferenceKey.showPageGuide))
             .disabled(!isEnabled)
@@ -512,19 +512,17 @@ struct EditorCommands: Commands {
 
     @ViewBuilder
     private var viewMenuFoldItems: some View {
-        // ⌃⌘F matches Xcode's Code Folding convention; ⌥⌘F is taken
-        // by Find and Replace.
         Button("Fold at Cursor", action: focused(CommandActions.toggleFoldAtCursor))
-            .keyboardShortcut("f", modifiers: [.command, .control])
+            .keyboardShortcut(AppShortcut.foldAtCursor)
             .disabled(!isEnabled)
         Button("Fold Selection", action: focused(CommandActions.foldSelection))
-            .keyboardShortcut("h", modifiers: [.command, .control])
+            .keyboardShortcut(AppShortcut.foldSelectionBlock)
             .disabled(!isEnabled)
         Button("Fold All", action: focused(CommandActions.foldAll))
-            .keyboardShortcut("[", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.foldAll)
             .disabled(!isEnabled)
         Button("Unfold All", action: focused(CommandActions.unfoldAll))
-            .keyboardShortcut("]", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.unfoldAll)
             .disabled(!isEnabled)
         Button("Clear Manual Fold Points", action: focused(CommandActions.clearManualFolds))
             .disabled(!isEnabled)
@@ -533,14 +531,14 @@ struct EditorCommands: Commands {
     @ViewBuilder
     private var viewMenuTailItems: some View {
         Button("Cycle Split View", action: focused(CommandActions.cycleSplitView))
-            .keyboardShortcut("e", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.cycleSplitView)
             .disabled(!isEnabled)
         Divider()
         Button("Show File Information", action: focused(CommandActions.toggleInspector))
-            .keyboardShortcut("i", modifiers: [.command, .option])
+            .keyboardShortcut(AppShortcut.showFileInfo)
             .disabled(!isEnabled)
         Button("Character Inspector…", action: focused { presentSheet(.characterInspector) })
-            .keyboardShortcut("i", modifiers: [.command, .control])
+            .keyboardShortcut(AppShortcut.characterInspector)
             .disabled(!isEnabled)
         Divider()
         Menu("Bookmarks") { bookmarkMenuItems }
@@ -556,27 +554,27 @@ struct EditorCommands: Commands {
     private var markdownSubmenuContent: some View {
         Group {
             Button("Bold", action: focused(CommandActions.markdownBold))
-                .keyboardShortcut("b")
+                .keyboardShortcut(AppShortcut.markdownBold)
             Button("Italic", action: focused(CommandActions.markdownItalic))
-                .keyboardShortcut("i")
+                .keyboardShortcut(AppShortcut.markdownItalic)
             Button("Inline Code", action: focused(CommandActions.markdownCode))
-                .keyboardShortcut("`")
+                .keyboardShortcut(AppShortcut.markdownCode)
             Button("Strikethrough", action: focused(CommandActions.markdownStrike))
-                .keyboardShortcut("x", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.markdownStrike)
             Divider()
             Menu("Heading") {
                 Button("Heading 1") { focused { CommandActions.markdownHeader(level: 1) } }
-                    .keyboardShortcut("1", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading1)
                 Button("Heading 2") { focused { CommandActions.markdownHeader(level: 2) } }
-                    .keyboardShortcut("2", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading2)
                 Button("Heading 3") { focused { CommandActions.markdownHeader(level: 3) } }
-                    .keyboardShortcut("3", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading3)
                 Button("Heading 4") { focused { CommandActions.markdownHeader(level: 4) } }
-                    .keyboardShortcut("4", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading4)
                 Button("Heading 5") { focused { CommandActions.markdownHeader(level: 5) } }
-                    .keyboardShortcut("5", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading5)
                 Button("Heading 6") { focused { CommandActions.markdownHeader(level: 6) } }
-                    .keyboardShortcut("6", modifiers: [.command, .control])
+                    .keyboardShortcut(AppShortcut.markdownHeading6)
             }
             Menu("List") {
                 Button("Bullet List (- )", action: focused(CommandActions.convertToBulletListDash))
@@ -587,23 +585,21 @@ struct EditorCommands: Commands {
         Divider()
         Group {
             Button("Blockquote", action: focused(CommandActions.markdownBlockquote))
-                .keyboardShortcut("'", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.markdownBlockquote)
             Button("Horizontal Rule", action: focused(CommandActions.markdownHorizontalRule))
-                .keyboardShortcut("-", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.markdownHRule)
             Button("Link…", action: focused(CommandActions.markdownLink))
-                .keyboardShortcut("k")
+                .keyboardShortcut(AppShortcut.markdownLink)
             Button("Image…", action: focused(CommandActions.markdownImage))
-                .keyboardShortcut("k", modifiers: [.command, .option])
-            // ⌥⌘N — ⇧⌘0 collides with Default Zoom, ⌃⌘F with Fold
-            // at Cursor.
+                .keyboardShortcut(AppShortcut.markdownImage)
             Button("Footnote", action: focused(CommandActions.markdownFootnote))
-                .keyboardShortcut("n", modifiers: [.command, .option])
+                .keyboardShortcut(AppShortcut.markdownFootnote)
             Button("Organize Footnotes…") { presentSheet(.organizeFootnotes) }
             Button("Insert Table…", action: focused(CommandActions.presentMarkdownTable))
-                .keyboardShortcut("t", modifiers: [.command, .control])
+                .keyboardShortcut(AppShortcut.markdownTable)
             Divider()
             Button("Preview…", action: focused(CommandActions.presentMarkdownPreview))
-                .keyboardShortcut("p", modifiers: [.command, .option])
+                .keyboardShortcut(AppShortcut.markdownPreview)
         }
     }
 
@@ -620,19 +616,18 @@ struct EditorCommands: Commands {
                     presentSheet(.findReplace)
                 }
             }
-            .keyboardShortcut("f")
+            .keyboardShortcut(AppShortcut.find)
             Button("Multi-File Search…", action: focused(CommandActions.presentMultiFileSearch))
-                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .keyboardShortcut(AppShortcut.multiFileSearch)
         }
 
         Divider()
 
         Group {
             Button("Go to Line…") { presentSheet(.goToLine) }
-                .keyboardShortcut("l")
-            // ⌃⌘B — ⇧⌘\ is Show All Tabs.
+                .keyboardShortcut(AppShortcut.goToLine)
             Button("Go to Matching Bracket", action: focused(CommandActions.goToMatchingBracket))
-                .keyboardShortcut("b", modifiers: [.command, .control])
+                .keyboardShortcut(AppShortcut.goToMatchingBracket)
             Button("Center Line", action: focused(CommandActions.centerLine))
         }
 
@@ -642,9 +637,9 @@ struct EditorCommands: Commands {
             Divider()
 
             Button("Back", action: focused(CommandActions.positionBack))
-                .keyboardShortcut(.leftArrow,  modifiers: [.command, .control])
+                .keyboardShortcut(AppShortcut.positionBack)
             Button("Forward", action: focused(CommandActions.positionForward))
-                .keyboardShortcut(.rightArrow, modifiers: [.command, .control])
+                .keyboardShortcut(AppShortcut.positionForward)
         }
     }
 
