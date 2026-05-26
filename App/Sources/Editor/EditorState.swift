@@ -85,11 +85,13 @@ final class EditorState {
     /// Selection-occurrence count for the status bar; 0 when nothing's
     /// highlighted.
     var liveMatchCount: Int = 0
-    /// Accessory keyboard's Control / Shift sticky modifiers. Armed
-    /// by a tap on the accessory's button; the engine's
-    /// `shouldChangeTextIn` consumes them on the next text insertion
-    /// to fire the matching ⌃/⇧ command instead of typing the letter.
+    /// Accessory keyboard's sticky modifiers. Armed by a tap on the
+    /// accessory bar; the engine's `shouldChangeTextIn` consumes them
+    /// on the next text insertion to fire the matching modified
+    /// command instead of typing the literal character.
     var armedAccessoryControl: Bool = false
+    var armedAccessoryCommand: Bool = false
+    var armedAccessoryOption: Bool = false
     var armedAccessoryShift: Bool = false
     var font: EditorFont
     var fontSize: Double

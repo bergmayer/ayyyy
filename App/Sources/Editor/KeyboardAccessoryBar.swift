@@ -166,13 +166,19 @@ enum CaretMover {
     }
 
     static func moveCursor(in textView: EditorEngine.TextView?, byLines lineDelta: Int) {
-        guard let textView else { return }
+        guard let textView, lineDelta != 0 else { return }
+        for _ in 0..<abs(lineDelta) {
+            moveOneLine(in: textView, downward: lineDelta > 0)
+        }
+    }
+
+    private static func moveOneLine(in textView: EditorEngine.TextView, downward: Bool) {
         let nsText = textView.text as NSString
         let cursor = textView.selectedRange.location
         let currentLine = nsText.lineRange(for: NSRange(location: cursor, length: 0))
         let column = cursor - currentLine.location
 
-        if lineDelta > 0 {
+        if downward {
             let nextStart = currentLine.location + currentLine.length
             guard nextStart < nsText.length else {
                 textView.selectedRange = NSRange(location: nsText.length, length: 0)
@@ -182,7 +188,7 @@ enum CaretMover {
             let nextLen = max(0, nextLine.length - 1)
             let target = nextLine.location + min(column, nextLen)
             textView.selectedRange = NSRange(location: min(target, nsText.length), length: 0)
-        } else if lineDelta < 0 {
+        } else {
             guard currentLine.location > 0 else {
                 textView.selectedRange = NSRange(location: 0, length: 0)
                 return
@@ -193,6 +199,31 @@ enum CaretMover {
             textView.selectedRange = NSRange(location: target, length: 0)
         }
     }
+
+    /// Word-boundary nav: moves the cursor over whitespace then over
+    /// the next word, in the requested direction. Matches the macOS
+    /// ⌥← / ⌥→ convention.
+    static func moveWord(in textView: EditorEngine.TextView?, forward: Bool) {
+        guard let textView else { return }
+        let nsText = textView.text as NSString
+        let length = nsText.length
+        guard length > 0 else { return }
+        var idx = textView.selectedRange.location
+        let isWord: (unichar) -> Bool = { ch in
+            (ch >= 0x30 && ch <= 0x39) ||
+            (ch >= 0x41 && ch <= 0x5A) ||
+            (ch >= 0x61 && ch <= 0x7A) ||
+            ch == 0x5F
+        }
+        if forward {
+            while idx < length, !isWord(nsText.character(at: idx)) { idx += 1 }
+            while idx < length,  isWord(nsText.character(at: idx)) { idx += 1 }
+        } else {
+            while idx > 0, !isWord(nsText.character(at: idx - 1)) { idx -= 1 }
+            while idx > 0,  isWord(nsText.character(at: idx - 1)) { idx -= 1 }
+        }
+        textView.selectedRange = NSRange(location: idx, length: 0)
+    }
 }
 
 // MARK: - Armed modifier dispatch
@@ -200,74 +231,152 @@ enum CaretMover {
 @MainActor
 enum AccessoryKeyboard {
 
-    /// Called from the engine's `shouldChangeTextIn` when a Control
-    /// or Shift modifier was armed on the accessory bar. Returns
-    /// `true` if the action was consumed (engine should NOT insert
-    /// the character), `false` to pass through.
+    /// Called from the engine's `shouldChangeTextIn` when one of the
+    /// accessory bar's sticky modifiers is armed. Returns `true`
+    /// when the action consumed the keypress (engine should NOT
+    /// insert the character), `false` to pass through.
+    ///
+    /// Priority is ⌘ → ⌃ → ⌥ → ⇧ so a ⌘⇧S still routes through the
+    /// command path, with the shift bit folded into the lookup.
     static func handleArmedKey(_ text: String, state: EditorState) -> Bool {
         guard let textView = state.textView else { return false }
         let lower = text.lowercased()
+        let engine = textView as? EditorEngine.TextView
+        let shifted = state.armedAccessoryShift
 
-        if state.armedAccessoryControl {
-            switch lower {
-            case "k":
-                CommandActions.deleteToEndOfLine()
-                return true
-            case "t":
-                CommandActions.transposeCharacters()
-                return true
-            case "j":
-                CommandActions.joinLines()
-                return true
-            case "a":
-                CommandActions.smartMoveToLineStart()
-                return true
-            case "e":
-                if let engineView = textView as? EditorEngine.TextView {
-                    CaretMover.moveToLineEnd(in: engineView)
-                }
-                return true
-            case "f":
-                if let engineView = textView as? EditorEngine.TextView {
-                    CaretMover.move(in: engineView, by: 1)
-                }
-                return true
-            case "b":
-                if let engineView = textView as? EditorEngine.TextView {
-                    CaretMover.move(in: engineView, by: -1)
-                }
-                return true
-            case "n":
-                if let engineView = textView as? EditorEngine.TextView {
-                    CaretMover.moveCursor(in: engineView, byLines: 1)
-                }
-                return true
-            case "p":
-                if let engineView = textView as? EditorEngine.TextView {
-                    CaretMover.moveCursor(in: engineView, byLines: -1)
-                }
-                return true
-            case "d":
-                CommandActions.deleteWordForward()
-                return true
-            case "h":
-                CommandActions.deleteWordBackward()
-                return true
-            default:
-                return false
-            }
+        if state.armedAccessoryCommand {
+            return handleCommandKey(lower, shifted: shifted, engine: engine)
         }
-
-        if state.armedAccessoryShift {
-            // Shift on its own swaps to uppercase. The iOS keyboard
-            // already handles capitalization; armed Shift just
-            // confirms one uppercased insert.
-            let upper = text.uppercased()
-            textView.replace(textView.selectedRange, withText: upper)
+        if state.armedAccessoryControl {
+            return handleControlKey(lower, engine: engine)
+        }
+        if state.armedAccessoryOption {
+            return handleOptionKey(lower, engine: engine)
+        }
+        if shifted {
+            // Bare Shift just confirms one uppercased insert — iOS
+            // already capitalizes via its own shift, so this is
+            // mostly a no-op safety net.
+            textView.replace(textView.selectedRange, withText: text.uppercased())
             return true
         }
-
         return false
+    }
+
+    private static func handleCommandKey(
+        _ lower: String,
+        shifted: Bool,
+        engine: EditorEngine.TextView?
+    ) -> Bool {
+        switch lower {
+        case "s":
+            if shifted {
+                AppStateBus.shared.pickers.pending = .saveAs
+            } else {
+                AppStateBus.shared.editing.saveCurrentDocument?()
+            }
+            return true
+        case "z":
+            shifted ? CommandActions.redo() : CommandActions.undo()
+            return true
+        case "c":
+            copySelection(from: engine)
+            return true
+        case "x":
+            copySelection(from: engine, clear: true)
+            return true
+        case "v":
+            pasteAtSelection(into: engine)
+            return true
+        case "a":
+            engine?.selectAll()
+            return true
+        case "f":
+            if shifted {
+                CommandActions.presentMultiFileSearch()
+            } else {
+                CommandActions.seedFindFromSelection()
+                CommandActions.presentSheet(.findReplace)
+            }
+            return true
+        case "g":
+            shifted ? CommandActions.findPrevious() : CommandActions.findNext()
+            return true
+        case "l":
+            CommandActions.presentSheet(.goToLine)
+            return true
+        case "t":
+            shifted ? CommandActions.reopenLastClosedTab() : CommandActions.newTab()
+            return true
+        case "n":
+            CommandActions.newWindow()
+            return true
+        case "w":
+            CommandActions.closeActiveTab()
+            return true
+        case ";":
+            CommandActions.presentCommandPalette()
+            return true
+        case "[":
+            CommandActions.outdentSelection()
+            return true
+        case "]":
+            CommandActions.indentSelection()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func handleControlKey(_ lower: String, engine: EditorEngine.TextView?) -> Bool {
+        switch lower {
+        case "k": CommandActions.deleteToEndOfLine();       return true
+        case "t": CommandActions.transposeCharacters();     return true
+        case "j": CommandActions.joinLines();               return true
+        case "a": CommandActions.smartMoveToLineStart();    return true
+        case "e": CaretMover.moveToLineEnd(in: engine);     return true
+        case "f": CaretMover.move(in: engine, by: 1);       return true
+        case "b": CaretMover.move(in: engine, by: -1);      return true
+        case "n": CaretMover.moveCursor(in: engine, byLines: 1);  return true
+        case "p": CaretMover.moveCursor(in: engine, byLines: -1); return true
+        case "d": CommandActions.deleteWordForward();       return true
+        case "h": CommandActions.deleteWordBackward();      return true
+        default:  return false
+        }
+    }
+
+    private static func handleOptionKey(_ lower: String, engine: EditorEngine.TextView?) -> Bool {
+        switch lower {
+        case "b":
+            CaretMover.moveWord(in: engine, forward: false)
+            return true
+        case "f":
+            CaretMover.moveWord(in: engine, forward: true)
+            return true
+        case "h":
+            CommandActions.deleteWordBackward()
+            return true
+        case "d":
+            CommandActions.deleteWordForward()
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func copySelection(from textView: EditorEngine.TextView?, clear: Bool = false) {
+        guard let textView, textView.selectedRange.length > 0 else { return }
+        let nsText = textView.text as NSString
+        let str = nsText.substring(with: textView.selectedRange)
+        UIPasteboard.general.string = str
+        if clear {
+            textView.replace(textView.selectedRange, withText: "")
+        }
+    }
+
+    private static func pasteAtSelection(into textView: EditorEngine.TextView?) {
+        guard let textView, let clip = UIPasteboard.general.string else { return }
+        textView.replace(textView.selectedRange, withText: clip)
     }
 }
 
@@ -284,6 +393,8 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     private let drawerRow: AccessoryRow
     private var drawerOpen: Bool
     private weak var controlButton: AccessoryButton?
+    private weak var commandButton: AccessoryButton?
+    private weak var optionButton: AccessoryButton?
     private weak var shiftButton: AccessoryButton?
 
     init(host: EditorEngine.TextView) {
@@ -365,34 +476,47 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
             self?.handleEscape()
         })
 
-        // Control (sticky)
-        let control = button(symbol: "control", label: "Control") { [weak self] in
-            guard let self, let state = self.host?.editorState else { return }
-            state.armedAccessoryControl.toggle()
-            if state.armedAccessoryControl { state.armedAccessoryShift = false }
-            self.refreshModifierVisuals()
-        }
-        controlButton = control
-        buttons.append(control)
+        // Sticky modifier cluster — tap arms; consumed by the next
+        // key on the iOS keyboard. Tapping a different modifier
+        // disarms the others so only one is in flight at a time
+        // (except ⇧ + ⌘ together, which Cmd's dispatch handles).
+        controlButton = modifierButton(symbol: "control",
+                                       label: "Control",
+                                       keyPath: \.armedAccessoryControl)
+        buttons.append(controlButton!)
 
-        // Shift (sticky)
-        let shift = button(symbol: "shift", label: "Shift") { [weak self] in
-            guard let self, let state = self.host?.editorState else { return }
-            state.armedAccessoryShift.toggle()
-            if state.armedAccessoryShift { state.armedAccessoryControl = false }
-            self.refreshModifierVisuals()
-        }
-        shiftButton = shift
-        buttons.append(shift)
+        commandButton = modifierButton(symbol: "command",
+                                       label: "Command",
+                                       keyPath: \.armedAccessoryCommand)
+        buttons.append(commandButton!)
 
-        // Tab character
-        buttons.append(button(symbol: "arrow.right.to.line", label: "Tab") { [weak self] in
-            guard let host = self?.host else { return }
-            host.replace(host.selectedRange, withText: "\t")
+        optionButton = modifierButton(symbol: "option",
+                                      label: "Option",
+                                      keyPath: \.armedAccessoryOption)
+        buttons.append(optionButton!)
+
+        shiftButton = modifierButton(symbol: "shift",
+                                     label: "Shift",
+                                     keyPath: \.armedAccessoryShift,
+                                     allowStackingWith: \.armedAccessoryCommand)
+        buttons.append(shiftButton!)
+
+        // Line / document cursor jumps
+        buttons.append(button(symbol: "arrow.left.to.line", label: "Start of Line") { [weak self] in
+            CaretMover.moveToLineStart(in: self?.host)
+        })
+        buttons.append(button(symbol: "arrow.right.to.line", label: "End of Line") { [weak self] in
+            CaretMover.moveToLineEnd(in: self?.host)
+        })
+        buttons.append(button(symbol: "arrow.up.to.line", label: "Start of Document") { [weak self] in
+            CaretMover.moveToDocumentStart(in: self?.host)
+        })
+        buttons.append(button(symbol: "arrow.down.to.line", label: "End of Document") { [weak self] in
+            CaretMover.moveToDocumentEnd(in: self?.host)
         })
 
-        // Arrow joystick — long-press for sustained arrows
-        buttons.append(arrowJoystickButton())
+        // Joystick — pan-gesture trackpad on the button itself
+        buttons.append(joystickButton())
 
         // Drawer toggle
         buttons.append(button(symbol: "ellipsis", label: "Toggle Drawer") { [weak self] in
@@ -405,6 +529,34 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         })
 
         return buttons
+    }
+
+    /// Sticky-modifier factory. `allowStackingWith` keeps that other
+    /// flag intact when this one arms (so ⇧ can coexist with ⌘ for
+    /// ⌘⇧S / ⌘⇧T / etc.).
+    private func modifierButton(
+        symbol: String,
+        label: String,
+        keyPath: ReferenceWritableKeyPath<EditorState, Bool>,
+        allowStackingWith stackKeyPath: ReferenceWritableKeyPath<EditorState, Bool>? = nil
+    ) -> AccessoryButton {
+        button(symbol: symbol, label: label) { [weak self] in
+            guard let self, let state = self.host?.editorState else { return }
+            let armingThis = !state[keyPath: keyPath]
+            // Disarm the other modifiers (except the explicitly
+            // allowed stacking partner).
+            let allOthers: [ReferenceWritableKeyPath<EditorState, Bool>] = [
+                \.armedAccessoryControl,
+                \.armedAccessoryCommand,
+                \.armedAccessoryOption,
+                \.armedAccessoryShift,
+            ]
+            for path in allOthers where path != keyPath && path != stackKeyPath {
+                state[keyPath: path] = false
+            }
+            state[keyPath: keyPath] = armingThis
+            self.refreshModifierVisuals()
+        }
     }
 
     private func drawerRowButtons() -> [AccessoryButton] {
@@ -496,8 +648,11 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     }
 
     private func refreshModifierVisuals() {
-        controlButton?.isToggled = host?.editorState?.armedAccessoryControl ?? false
-        shiftButton?.isToggled = host?.editorState?.armedAccessoryShift ?? false
+        let state = host?.editorState
+        controlButton?.isToggled = state?.armedAccessoryControl ?? false
+        commandButton?.isToggled = state?.armedAccessoryCommand ?? false
+        optionButton?.isToggled  = state?.armedAccessoryOption ?? false
+        shiftButton?.isToggled   = state?.armedAccessoryShift ?? false
     }
 
     /// Polls the host state's armed flags so the engine clearing them
@@ -505,7 +660,7 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     /// Link is overkill; a 100 ms timer is invisible to the user.
     private func startStateObserver() {
         let timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.refreshModifierVisuals()
+            Task { @MainActor in self?.refreshModifierVisuals() }
         }
         timer.tolerance = 0.04
         objc_setAssociatedObject(self, &observerTimerKey, timer, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
@@ -513,28 +668,12 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
 
     // MARK: Joystick
 
-    private func arrowJoystickButton() -> AccessoryButton {
-        let btn = AccessoryButton(style: .main)
+    private func joystickButton() -> AccessoryButton {
+        let btn = JoystickButton()
         btn.configure(symbol: "arrow.up.and.down.and.arrow.left.and.right",
-                      accessibility: "Arrow Joystick")
-        btn.tapAction = { [weak self, weak btn] in
-            guard let self, let btn else { return }
-            self.presentArrowPad(from: btn)
-        }
+                      accessibility: "Arrow Joystick (drag to move cursor)")
+        btn.host = host
         return btn
-    }
-
-    private func presentArrowPad(from anchor: AccessoryButton) {
-        let pad = ArrowPadView(host: host)
-        pad.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(pad)
-        NSLayoutConstraint.activate([
-            pad.bottomAnchor.constraint(equalTo: mainRow.topAnchor, constant: -8),
-            pad.centerXAnchor.constraint(equalTo: anchor.centerXAnchor),
-            pad.widthAnchor.constraint(equalToConstant: 156),
-            pad.heightAnchor.constraint(equalToConstant: 100)
-        ])
-        pad.onDismiss = { [weak pad] in pad?.removeFromSuperview() }
     }
 
     // MARK: Button factory
@@ -611,7 +750,7 @@ private final class AccessoryRow: UIView {
 // MARK: - Button
 
 @MainActor
-final class AccessoryButton: UIControl {
+class AccessoryButton: UIControl {
 
     enum Style { case main, drawer }
     private let style: Style
@@ -698,71 +837,73 @@ final class AccessoryButton: UIControl {
     }
 }
 
-// MARK: - Arrow pad popover
+// MARK: - Joystick (pan-gesture trackpad)
 
+/// Drag-to-move cursor button. Vertical drag steps by line, horizontal
+/// by character; diagonal drag fires both axes simultaneously. Drag
+/// thresholds are sized so a small wrist movement reaches each
+/// neighbour without overshooting.
 @MainActor
-private final class ArrowPadView: UIView {
+final class JoystickButton: AccessoryButton {
 
     weak var host: EditorEngine.TextView?
-    var onDismiss: (() -> Void)?
 
-    init(host: EditorEngine.TextView?) {
-        self.host = host
-        super.init(frame: .zero)
-        backgroundColor = UIColor.label.withAlphaComponent(0.08)
-        layer.cornerRadius = 10
-        layer.cornerCurve = .continuous
+    /// Tracked drag offset since the last fire, per axis. Each time
+    /// `|offset|` crosses the per-axis step, we fire one move and
+    /// subtract that step — the user can keep dragging to keep moving.
+    private var startTranslation: CGPoint = .zero
+    private var firedOffset: CGPoint = .zero
 
-        let up    = makeArrow(symbol: "arrow.up", accessibility: "Up") { [weak self] in self?.move(line: -1) }
-        let down  = makeArrow(symbol: "arrow.down", accessibility: "Down") { [weak self] in self?.move(line: 1) }
-        let left  = makeArrow(symbol: "arrow.left", accessibility: "Left") { [weak self] in self?.move(char: -1) }
-        let right = makeArrow(symbol: "arrow.right", accessibility: "Right") { [weak self] in self?.move(char: 1) }
-        let close = makeArrow(symbol: "xmark", accessibility: "Close") { [weak self] in self?.onDismiss?() }
+    /// Pixels of drag = one cursor step. Chars move smaller than
+    /// lines (~half) because lines are taller than character cells.
+    private static let charStep: CGFloat = 11
+    private static let lineStep: CGFloat = 18
 
-        let topRow = UIStackView(arrangedSubviews: [spacer(), up, spacer()])
-        let midRow = UIStackView(arrangedSubviews: [left, close, right])
-        let botRow = UIStackView(arrangedSubviews: [spacer(), down, spacer()])
-        for row in [topRow, midRow, botRow] {
-            row.axis = .horizontal
-            row.spacing = 6
-            row.distribution = .fillEqually
-        }
-        let stack = UIStackView(arrangedSubviews: [topRow, midRow, botRow])
-        stack.axis = .vertical
-        stack.spacing = 4
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stack)
-        NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 6),
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -6)
-        ])
+    init() {
+        super.init(style: .main)
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan))
+        pan.minimumNumberOfTouches = 1
+        pan.maximumNumberOfTouches = 1
+        pan.cancelsTouchesInView = false
+        addGestureRecognizer(pan)
+        // The drag below would otherwise also fire the inherited
+        // touchUpInside tap. With no tap action set on the joystick
+        // (we only react to drag), `handleTap` is a no-op anyway.
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    private func makeArrow(symbol: String,
-                           accessibility: String,
-                           action: @escaping () -> Void) -> UIView {
-        let btn = AccessoryButton(style: .main)
-        btn.configure(symbol: symbol, accessibility: accessibility)
-        btn.tapAction = action
-        return btn
+    @objc private func handlePan(_ recognizer: UIPanGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            startTranslation = .zero
+            firedOffset = .zero
+        case .changed:
+            let translation = recognizer.translation(in: self)
+            consumeAxis(translation: translation)
+        case .ended, .cancelled, .failed:
+            startTranslation = .zero
+            firedOffset = .zero
+        default:
+            break
+        }
     }
 
-    private func spacer() -> UIView {
-        let v = UIView()
-        v.translatesAutoresizingMaskIntoConstraints = false
-        return v
-    }
-
-    private func move(char delta: Int) {
-        CaretMover.move(in: host, by: delta)
-    }
-
-    private func move(line delta: Int) {
-        CaretMover.moveCursor(in: host, byLines: delta)
+    private func consumeAxis(translation: CGPoint) {
+        // Horizontal — characters
+        let dxRemainder = translation.x - firedOffset.x
+        if abs(dxRemainder) >= Self.charStep {
+            let steps = Int((dxRemainder / Self.charStep).rounded(.towardZero))
+            CaretMover.move(in: host, by: steps)
+            firedOffset.x += CGFloat(steps) * Self.charStep
+        }
+        // Vertical — lines
+        let dyRemainder = translation.y - firedOffset.y
+        if abs(dyRemainder) >= Self.lineStep {
+            let lineSteps = Int((dyRemainder / Self.lineStep).rounded(.towardZero))
+            CaretMover.moveCursor(in: host, byLines: lineSteps)
+            firedOffset.y += CGFloat(lineSteps) * Self.lineStep
+        }
     }
 }
 
