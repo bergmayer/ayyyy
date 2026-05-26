@@ -103,6 +103,11 @@ protocol SpellCheck: AnyObject {
     func learnWord(_ word: String)
     /// Ignore a word by string for the rest of the session.
     func ignoreWord(_ word: String)
+    /// Returns the range of a currently-painted misspelling highlight
+    /// containing `location`, if any. Drives tap-to-suggest — when
+    /// the cursor lands inside one of these (via tap), the editor
+    /// opens the walk-through sheet seeded at the start of the word.
+    func misspellingRange(at location: Int) -> NSRange?
 }
 
 // MARK: - Folding

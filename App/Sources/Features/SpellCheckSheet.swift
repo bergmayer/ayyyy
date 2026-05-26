@@ -20,8 +20,17 @@ struct SpellCheckSheet: View {
         AppStateBus.shared.scenes.currentEditor?.textView
     }
 
+    /// Where the walk-through begins. If the caret sits inside a
+    /// highlighted misspelling — the tap-to-suggest entry point —
+    /// rewind to the start of the word so `nextMisspelling(from:)`
+    /// returns *that* word and not the one after it.
     private var startLocation: Int {
-        AppStateBus.shared.scenes.currentEditor?.selectedRange.location ?? 0
+        guard let editor = AppStateBus.shared.scenes.currentEditor else { return 0 }
+        let cursor = editor.selectedRange.location
+        if let containing = editor.textView?.misspellingRange(at: cursor) {
+            return containing.location
+        }
+        return cursor
     }
 
     var body: some View {

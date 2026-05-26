@@ -213,6 +213,22 @@ struct EditorCommands: Commands {
             Button("Join Lines", action: focused(CommandActions.joinLines))
                 .keyboardShortcut(AppShortcut.joinLines)
                 .disabled(!isEnabled)
+
+            Divider()
+
+            Menu("Spelling") {
+                Button("Check Spelling…") { CommandActions.presentSpellCheckSheet() }
+                Divider()
+                Button("Find Next Misspelling", action: focused(CommandActions.jumpToNextMisspelling))
+                Button("Learn Spelling of Word", action: focused(CommandActions.learnSelectedWord))
+                Button("Ignore Spelling for Word", action: focused(CommandActions.ignoreSelectedWord))
+                Divider()
+                Button("Highlight All Misspellings", action: focused(CommandActions.highlightAllMisspellings))
+                Button("Clear Spelling Marks", action: focused(CommandActions.clearMisspellingHighlights))
+                Divider()
+                Button("Toggle Live Spell Check", action: focused(CommandActions.toggleSpellCheckLive))
+            }
+            .disabled(!isEnabled)
         }
 
         // MARK: Search

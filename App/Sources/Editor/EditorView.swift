@@ -151,6 +151,22 @@ struct EditorView: View {
         .onChange(of: document.bufferRevision) { _, _ in
             scheduleAutoSave()
         }
+        // Tap-to-suggest on Highlight All Misspellings results: when
+        // the caret JUST entered a highlighted misspelling range (and
+        // wasn't already in the same range — guard against arrow-key
+        // movement WITHIN a word repeatedly opening the sheet),
+        // present the walk-through with that word as the first hit.
+        // Only when no other sheet is up so we don't stomp on user
+        // intent (Find/Replace, palette, etc.).
+        .onChange(of: state.selectedRange) { oldValue, newValue in
+            guard newValue.length == 0,
+                  AppStateBus.shared.editing.presentedSheet == nil,
+                  let actions = state.textView,
+                  let entered = actions.misspellingRange(at: newValue.location),
+                  actions.misspellingRange(at: oldValue.location) != entered
+            else { return }
+            CommandActions.presentSpellCheckSheet()
+        }
         // Wholesale text replacements (load / revert / restore)
         // come in through `document.text`; the engine's
         // `updateUIView` catches those via its `lastPushedDocumentText`

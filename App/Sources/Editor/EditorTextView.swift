@@ -985,6 +985,19 @@ extension EditorEngine.TextView: EditorActions {
         }
     }
 
+    /// Scans the current misspelling highlights and returns the one
+    /// containing `location` — inclusive of the trailing edge so a
+    /// cursor parked right after the last letter still counts as
+    /// "inside the word".
+    func misspellingRange(at location: Int) -> NSRange? {
+        for hr in highlightedRanges where hr.id.hasPrefix(Self.misspellingHighlightID) {
+            if NSLocationInRange(location, hr.range) || location == NSMaxRange(hr.range) {
+                return hr.range
+            }
+        }
+        return nil
+    }
+
     /// Word at the cursor; nil if the cursor sits in whitespace.
     private func wordAtSelection() -> String? {
         let nsText = text as NSString
