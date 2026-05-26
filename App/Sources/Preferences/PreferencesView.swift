@@ -284,7 +284,7 @@ private struct TypingPreferencesTab: View {
     @AppStorage(AppPreferenceKey.smartQuotes) private var smartQuotes: Bool = false
     @AppStorage(AppPreferenceKey.spellCheck) private var spellCheck: Bool = false
     @AppStorage(AppPreferenceKey.autoContinueLists) private var autoContinueLists: Bool = true
-    @AppStorage(AppPreferenceKey.keyboardShowsBracketPairs) private var kbBrackets: Bool = false
+    @AppStorage(AppPreferenceKey.accessoryDrawerOpenByDefault) private var accessoryDrawerOpen: Bool = false
 
     @State private var snippetsStore = SnippetsStore.shared
     @State private var editingSnippet: Snippet?
@@ -317,11 +317,11 @@ private struct TypingPreferencesTab: View {
             }
 
             Section {
-                Toggle("Bracket pair keys (), [], {}, <>", isOn: $kbBrackets)
+                Toggle("Open Drawer by Default", isOn: $accessoryDrawerOpen)
             } header: {
-                Text("On-Screen Keyboard Extras")
+                Text("Keyboard Accessory")
             } footer: {
-                Text("Bracket pairs appear in the keyboard's shortcut bar above the soft keyboard. Changes apply the next time the keyboard appears.")
+                Text("The accessory bar above the soft keyboard has a punctuation drawer (` ~ ^ _ \\ | () {} [] / ?  …) that toggles via the ⋯ button. Turn this on to keep it expanded.")
             }
 
             // Palette ▸ Insert Snippet, the keyboard accessory bar,

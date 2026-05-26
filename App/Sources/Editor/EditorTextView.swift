@@ -523,6 +523,20 @@ struct EditorTextView: UIViewRepresentable {
         ) -> Bool {
             if isApplyingSiblingSync { return true }
 
+            // 0. Armed accessory modifier — Control / Shift from the
+            // accessory bar wins over the literal keystroke. Single-
+            // letter ASCII insertions consume the armed flag and
+            // fire the matching command instead.
+            if state.armedAccessoryControl || state.armedAccessoryShift,
+               text.count == 1,
+               let ascii = text.unicodeScalars.first,
+               ascii.isASCII {
+                let consumed = AccessoryKeyboard.handleArmedKey(text, state: state)
+                state.armedAccessoryControl = false
+                state.armedAccessoryShift = false
+                if consumed { return false }
+            }
+
             // 1. Dirty flag up front — entry point for "first edit
             // on this doc", no after-the-fact buffer compare needed.
             if !document.isDirty { document.isDirty = true }
