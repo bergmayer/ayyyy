@@ -561,21 +561,17 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     }
 
     private func drawerRowButtons() -> [AccessoryButton] {
-        // Pure character palette — every entry inserts its literal
-        // glyph at the cursor.
+        // Only chars that AREN'T already on the iOS keyboard's `123`
+        // page (one tap from ABC). Punctuation reachable there —
+        // ( ) / ? - ' " @ $ & ; : — would just duplicate keys.
         let chars: [(String, String)] = [
             ("`", "Backtick"), ("~", "Tilde"), ("^", "Caret"),
             ("_", "Underscore"), ("\\", "Backslash"), ("|", "Pipe"),
-            ("(", "Left Paren"), (")", "Right Paren"),
             ("{", "Left Brace"), ("}", "Right Brace"),
             ("[", "Left Bracket"), ("]", "Right Bracket"),
             ("<", "Less Than"), (">", "Greater Than"),
-            ("/", "Slash"), ("?", "Question Mark"),
-            ("-", "Dash"), ("=", "Equals"),
-            ("'", "Single Quote"), ("\"", "Double Quote"),
-            ("@", "At Sign"), ("#", "Hash"), ("$", "Dollar"),
-            ("%", "Percent"), ("&", "Ampersand"), ("*", "Asterisk"),
-            (";", "Semicolon"), (":", "Colon")
+            ("=", "Equals"),
+            ("#", "Hash"), ("%", "Percent"), ("*", "Asterisk")
         ]
 
         return chars.map { (glyph, label) in
