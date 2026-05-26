@@ -150,6 +150,18 @@ struct EditorView: View {
         // the McCartney-file freeze.
         .onChange(of: document.bufferRevision) { _, _ in
             scheduleAutoSave()
+            scheduleLiveSpellCheckIfEnabled()
+        }
+        // Toggling live spell check repaints / clears immediately
+        // so the user sees the change without typing another key.
+        .onChange(of: state.spellCheck) { _, isOn in
+            if isOn {
+                state.textView?.highlightAllMisspellings()
+            } else {
+                state.liveSpellTask?.cancel()
+                state.liveSpellTask = nil
+                state.textView?.clearMisspellingHighlights()
+            }
         }
         // Tap-to-suggest on Highlight All Misspellings results: when
         // the caret JUST entered a highlighted misspelling range (and
@@ -602,6 +614,7 @@ struct EditorView: View {
                 ForEach(slots) { slot in
                     if let cmd = registry.first(where: { $0.id == slot.commandId }) {
                         Button {
+                            claimFocus()
                             if cmd.isEnabled() { cmd.action() }
                         } label: {
                             Label(cmd.title, systemImage: slot.symbol.isEmpty ? "questionmark" : slot.symbol)
@@ -621,6 +634,7 @@ struct EditorView: View {
     @ViewBuilder
     private var phoneTabsButton: some View {
         Button {
+            claimFocus()
             CommandActions.showTabSwitcher()
         } label: {
             ZStack {
@@ -672,6 +686,7 @@ struct EditorView: View {
     @ViewBuilder
     private var splitCycleButton: some View {
         Button {
+            claimFocus()
             CommandActions.cycleSplitView()
         } label: {
             Image(systemName: splitCycleSymbolName)
@@ -727,11 +742,28 @@ struct EditorView: View {
         }
     }
 
+    /// Debounced re-paint of misspelling highlights while typing. No-op
+    /// when live spell check is off — the user's audit-style use of
+    /// `Highlight All Misspellings` already covers the off case. The
+    /// 400 ms delay matches autocorrect's "I've stopped typing" feel
+    /// without thrashing the highlight list on every keystroke.
+    private func scheduleLiveSpellCheckIfEnabled() {
+        guard state.spellCheck, !document.isLoading else { return }
+        state.liveSpellTask?.cancel()
+        state.liveSpellTask = Task { @MainActor [weak state] in
+            defer { state?.liveSpellTask = nil }
+            try? await Task.sleep(for: .milliseconds(400))
+            if Task.isCancelled { return }
+            state?.textView?.highlightAllMisspellings()
+        }
+    }
+
     /// Always enabled — untitled buffers still capture in-memory
     /// snapshots keyed by tab UUID, so there's something to browse.
     @ViewBuilder
     private var revisionsButton: some View {
         Button {
+            claimFocus()
             CommandActions.presentRevisions()
         } label: {
             Image(systemName: "clock.arrow.circlepath")

@@ -123,6 +123,12 @@ final class EditorState {
     /// user pauses.
     var autoSaveTask: Task<Void, Never>?
 
+    /// Debounced re-highlight for live spell check. The engine is a
+    /// UIScrollView + custom UITextInput, so it doesn't draw native
+    /// squiggles — we paint red misspelling highlights ourselves
+    /// after typing stops.
+    var liveSpellTask: Task<Void, Never>?
+
     /// **Important:** EditorView must assign these with weak captures
     /// — closures stored on `self` that capture `self` strongly are
     /// a classic ARC cycle.

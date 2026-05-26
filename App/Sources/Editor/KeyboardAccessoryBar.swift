@@ -2,18 +2,12 @@ import UIKit
 import EditorEngine
 import GameController
 
-/// Single-row keyboard accessory shown above the iOS soft keyboard.
-///
-///   * **iPhone (soft keyboard)** — custom horizontal-scrolling row
-///     with esc, ⌃/⌥/⌘ sticky modifiers, line/document caret jumps,
-///     and a dismiss-keyboard button.
-///   * **iPad (soft keyboard)** — uses the system `inputAssistantItem`
-///     shortcut bar instead, because a free-floating
-///     `inputAccessoryView` on iPad bleeds into our status-bar overlay
-///     in Stage Manager / Slide Over windows.
-///   * **iPad (hardware keyboard)** — both surfaces cleared.
-///
-/// Hardware-keyboard connect/disconnect is observed via
+/// Single-row keyboard accessory shown above the iOS soft keyboard
+/// on both iPhone and iPad — same custom row everywhere, with esc,
+/// ⌃/⌥/⌘ sticky modifiers, line/document caret jumps, and a
+/// dismiss-keyboard button. The system `inputAssistantItem` strip
+/// is always suppressed so ours is the only thing the user sees.
+/// Hardware-keyboard attached → both surfaces cleared, observed via
 /// `GameController` so the bar reappears the moment the user unplugs.
 @MainActor
 enum KeyboardAccessoryBar {
@@ -24,32 +18,22 @@ enum KeyboardAccessoryBar {
     }
 
     private static func refresh(_ textView: EditorEngine.TextView) {
-        if DeviceIdiom.isPhone {
-            if !(textView.inputAccessoryView is EditorAccessoryView) {
-                textView.inputAccessoryView = EditorAccessoryView(host: textView)
-            }
-            // Suppress the iOS default `inputAssistantItem` strip
-            // (clipboard / history / edit actions glyphs) — iPhone
-            // would otherwise render it above our accessory, eating
-            // ~44 pt of vertical space and pushing our row behind
-            // the keyboard.
-            let assistant = textView.inputAssistantItem
-            assistant.leadingBarButtonGroups = []
-            assistant.trailingBarButtonGroups = []
-        } else {
-            // iPad path — preserve the existing inputAssistantItem
-            // approach until the Stage-Manager bleed-through is fixed.
-            let assistant = textView.inputAssistantItem
-            if GCKeyboard.coalesced != nil {
-                assistant.leadingBarButtonGroups = []
-                assistant.trailingBarButtonGroups = []
-                return
-            }
-            let navItems = Self.makeIPadNavigationItems(textView: textView)
-            assistant.leadingBarButtonGroups = [
-                UIBarButtonItemGroup(barButtonItems: navItems, representativeItem: nil)
-            ]
-            assistant.trailingBarButtonGroups = []
+        // Hardware keyboard attached → no soft accessory anywhere.
+        let hasHardwareKeyboard = GCKeyboard.coalesced != nil
+        let assistant = textView.inputAssistantItem
+        assistant.leadingBarButtonGroups = []
+        assistant.trailingBarButtonGroups = []
+
+        if hasHardwareKeyboard {
+            textView.inputAccessoryView = nil
+            return
+        }
+
+        // Same custom row on iPhone and iPad — the system
+        // `inputAssistantItem` strip is always suppressed above so
+        // ours is the only thing the user sees.
+        if !(textView.inputAccessoryView is EditorAccessoryView) {
+            textView.inputAccessoryView = EditorAccessoryView(host: textView)
         }
     }
 
@@ -61,51 +45,6 @@ enum KeyboardAccessoryBar {
         objc_setAssociatedObject(textView, &observerKey, holder, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
     }
 
-    // MARK: - iPad navigation items
-
-    private static func makeIPadNavigationItems(textView: EditorEngine.TextView) -> [UIBarButtonItem] {
-        [
-            barItem(title: "Esc") { _ in },
-            barItem(symbol: "arrow.right.to.line.compact", accessibility: "Tab") { [weak textView] _ in
-                guard let textView else { return }
-                textView.replace(textView.selectedRange, withText: "\t")
-            },
-            barItem(symbol: "arrow.right",
-                    accessibility: "Move to End of Line") { [weak textView] _ in
-                CaretMover.moveToLineEnd(in: textView)
-            },
-            barItem(symbol: "arrow.left",
-                    accessibility: "Move to Start of Line") { [weak textView] _ in
-                CaretMover.moveToLineStart(in: textView)
-            },
-            barItem(symbol: "arrow.down.to.line",
-                    accessibility: "Move to End of Document") { [weak textView] _ in
-                CaretMover.moveToDocumentEnd(in: textView)
-            },
-            barItem(symbol: "arrow.up.to.line",
-                    accessibility: "Move to Start of Document") { [weak textView] _ in
-                CaretMover.moveToDocumentStart(in: textView)
-            }
-        ]
-    }
-
-    private static func barItem(symbol: String,
-                                accessibility: String,
-                                handler: @escaping (UIAction) -> Void) -> UIBarButtonItem {
-        let image = UIImage(systemName: symbol)
-        let action = UIAction(title: accessibility, image: image, handler: handler)
-        let bar = UIBarButtonItem(primaryAction: action)
-        bar.accessibilityLabel = accessibility
-        return bar
-    }
-
-    private static func barItem(title: String,
-                                handler: @escaping (UIAction) -> Void) -> UIBarButtonItem {
-        let action = UIAction(title: title, handler: handler)
-        let bar = UIBarButtonItem(primaryAction: action)
-        bar.accessibilityLabel = title
-        return bar
-    }
 }
 
 private nonisolated(unsafe) var observerKey: UInt8 = 0
