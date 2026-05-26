@@ -88,11 +88,12 @@ final class EditorState {
     /// Accessory keyboard's sticky modifiers. Armed by a tap on the
     /// accessory bar; the engine's `shouldChangeTextIn` consumes them
     /// on the next text insertion to fire the matching modified
-    /// command instead of typing the literal character.
+    /// command instead of typing the literal character. Shift is
+    /// derived from the case of the incoming character (iOS shift
+    /// arms the uppercase form natively), not tracked here.
     var armedAccessoryControl: Bool = false
     var armedAccessoryCommand: Bool = false
     var armedAccessoryOption: Bool = false
-    var armedAccessoryShift: Bool = false
     var font: EditorFont
     var fontSize: Double
     var lineHeight: Double

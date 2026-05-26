@@ -523,14 +523,14 @@ struct EditorTextView: UIViewRepresentable {
         ) -> Bool {
             if isApplyingSiblingSync { return true }
 
-            // 0. Armed accessory modifier — Control / Command / Option
-            // / Shift from the accessory bar wins over the literal
+            // 0. Armed accessory modifier — Control / Command /
+            // Option from the accessory bar wins over the literal
             // keystroke. Single-letter ASCII insertions consume the
             // armed flags and fire the matching command instead.
+            // Shift is read from the case of the incoming letter.
             if state.armedAccessoryControl
                 || state.armedAccessoryCommand
-                || state.armedAccessoryOption
-                || state.armedAccessoryShift,
+                || state.armedAccessoryOption,
                text.count == 1,
                let ascii = text.unicodeScalars.first,
                ascii.isASCII {
@@ -538,7 +538,6 @@ struct EditorTextView: UIViewRepresentable {
                 state.armedAccessoryControl = false
                 state.armedAccessoryCommand = false
                 state.armedAccessoryOption = false
-                state.armedAccessoryShift = false
                 if consumed { return false }
             }
 

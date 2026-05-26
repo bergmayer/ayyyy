@@ -236,13 +236,14 @@ enum AccessoryKeyboard {
     /// when the action consumed the keypress (engine should NOT
     /// insert the character), `false` to pass through.
     ///
-    /// Priority is ⌘ → ⌃ → ⌥ → ⇧ so a ⌘⇧S still routes through the
-    /// command path, with the shift bit folded into the lookup.
+    /// Priority is ⌘ → ⌃ → ⌥. The "shifted" form of a Command
+    /// shortcut (e.g. ⌘⇧S) is detected by the iOS keyboard
+    /// delivering an uppercase letter — no separate accessory key.
     static func handleArmedKey(_ text: String, state: EditorState) -> Bool {
-        guard let textView = state.textView else { return false }
+        guard state.textView != nil else { return false }
         let lower = text.lowercased()
-        let engine = textView as? EditorEngine.TextView
-        let shifted = state.armedAccessoryShift
+        let engine = state.textView as? EditorEngine.TextView
+        let shifted = (text != lower)
 
         if state.armedAccessoryCommand {
             return handleCommandKey(lower, shifted: shifted, engine: engine)
@@ -252,13 +253,6 @@ enum AccessoryKeyboard {
         }
         if state.armedAccessoryOption {
             return handleOptionKey(lower, engine: engine)
-        }
-        if shifted {
-            // Bare Shift just confirms one uppercased insert — iOS
-            // already capitalizes via its own shift, so this is
-            // mostly a no-op safety net.
-            textView.replace(textView.selectedRange, withText: text.uppercased())
-            return true
         }
         return false
     }
@@ -395,7 +389,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
     private weak var controlButton: AccessoryButton?
     private weak var commandButton: AccessoryButton?
     private weak var optionButton: AccessoryButton?
-    private weak var shiftButton: AccessoryButton?
 
     init(host: EditorEngine.TextView) {
         self.host = host
@@ -484,8 +477,9 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
 
         // Sticky modifier cluster — tap arms; consumed by the next
         // key on the iOS keyboard. Tapping a different modifier
-        // disarms the others so only one is in flight at a time
-        // (except ⇧ + ⌘ together, which Cmd's dispatch handles).
+        // disarms the others. Shift isn't a button: the iOS
+        // keyboard's own shift handles capitalization and the
+        // engine reads the resulting case to detect ⌘⇧ shortcuts.
         // IMPORTANT: hold each button in a local `let` before writing
         // to the `weak` ivar — otherwise the autoreleased return
         // value dies before the array append and the weak ref nils
@@ -507,13 +501,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
                                     keyPath: \.armedAccessoryOption)
         optionButton = option
         buttons.append(option)
-
-        let shift = modifierButton(symbol: "shift",
-                                   label: "Shift",
-                                   keyPath: \.armedAccessoryShift,
-                                   allowStackingWith: \.armedAccessoryCommand)
-        shiftButton = shift
-        buttons.append(shift)
 
         // Line / document cursor jumps
         buttons.append(button(symbol: "arrow.left.to.line", label: "Start of Line") { [weak self] in
@@ -540,27 +527,22 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         return buttons
     }
 
-    /// Sticky-modifier factory. `allowStackingWith` keeps that other
-    /// flag intact when this one arms (so ⇧ can coexist with ⌘ for
-    /// ⌘⇧S / ⌘⇧T / etc.).
+    /// Sticky-modifier factory. Only one modifier is in flight at
+    /// a time; tapping a different one disarms the rest.
     private func modifierButton(
         symbol: String,
         label: String,
-        keyPath: ReferenceWritableKeyPath<EditorState, Bool>,
-        allowStackingWith stackKeyPath: ReferenceWritableKeyPath<EditorState, Bool>? = nil
+        keyPath: ReferenceWritableKeyPath<EditorState, Bool>
     ) -> AccessoryButton {
         button(symbol: symbol, label: label) { [weak self] in
             guard let self, let state = self.host?.editorState else { return }
             let armingThis = !state[keyPath: keyPath]
-            // Disarm the other modifiers (except the explicitly
-            // allowed stacking partner).
             let allOthers: [ReferenceWritableKeyPath<EditorState, Bool>] = [
                 \.armedAccessoryControl,
                 \.armedAccessoryCommand,
                 \.armedAccessoryOption,
-                \.armedAccessoryShift,
             ]
-            for path in allOthers where path != keyPath && path != stackKeyPath {
+            for path in allOthers where path != keyPath {
                 state[keyPath: path] = false
             }
             state[keyPath: keyPath] = armingThis
@@ -609,9 +591,12 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         // Order: clear armed modifiers → dismiss sheet → clear
         // selection. Each step short-circuits if it had work to do.
         if let state = host?.editorState,
-           state.armedAccessoryControl || state.armedAccessoryShift {
+           state.armedAccessoryControl
+            || state.armedAccessoryCommand
+            || state.armedAccessoryOption {
             state.armedAccessoryControl = false
-            state.armedAccessoryShift = false
+            state.armedAccessoryCommand = false
+            state.armedAccessoryOption = false
             refreshModifierVisuals()
             return
         }
@@ -638,7 +623,6 @@ final class EditorAccessoryView: UIInputView, UIScrollViewDelegate {
         controlButton?.isToggled = state?.armedAccessoryControl ?? false
         commandButton?.isToggled = state?.armedAccessoryCommand ?? false
         optionButton?.isToggled  = state?.armedAccessoryOption ?? false
-        shiftButton?.isToggled   = state?.armedAccessoryShift ?? false
     }
 
     /// Polls the host state's armed flags so the engine clearing them
