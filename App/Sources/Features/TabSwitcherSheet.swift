@@ -254,6 +254,59 @@ private struct TabCard: View {
 
     @ViewBuilder
     private var thumbnail: some View {
+        if tab.kind == .launcher {
+            launcherThumbnail
+        } else if tab.kind == .fileBrowser {
+            fileBrowserThumbnail
+        } else {
+            textThumbnail
+        }
+    }
+
+    /// Mirrors `NewDocumentLauncherView` at thumbnail scale so the
+    /// user immediately recognizes a tab parked on the new-document
+    /// surface in the expose grid.
+    @ViewBuilder
+    private var launcherThumbnail: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "doc.badge.plus")
+                .font(.system(size: 26, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tint)
+            Text("New Document")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+            Text("Templates · Drafts · Open File")
+                .font(.system(size: 9))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .padding(.top, 16)
+        .background(Color(.secondarySystemBackground))
+        .disabled(true)
+    }
+
+    @ViewBuilder
+    private var fileBrowserThumbnail: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "folder.fill")
+                .font(.system(size: 26, weight: .regular))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tint)
+            Text("Open File")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 160)
+        .padding(.top, 16)
+        .background(Color(.secondarySystemBackground))
+        .disabled(true)
+    }
+
+    @ViewBuilder
+    private var textThumbnail: some View {
         // Plain-text preview: first ~16 lines. Truncated mid-line so
         // long files don't visually dominate. Extra top padding (28pt)
         // keeps the first line clear of the close-button overlay in
@@ -276,7 +329,7 @@ private struct TabCard: View {
     @ViewBuilder
     private var footer: some View {
         HStack(spacing: 6) {
-            Image(systemName: tab.document.fileURL == nil ? "doc.text" : "doc")
+            Image(systemName: footerIconName)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
             Text(displayName)
@@ -358,7 +411,19 @@ private struct TabCard: View {
     }
 
     private var displayName: String {
-        tab.document.fileURL?.lastPathComponent ?? "Untitled"
+        switch tab.kind {
+        case .launcher:   return "New"
+        case .fileBrowser: return "New Tab"
+        case .editor:     return tab.document.displayName
+        }
+    }
+
+    private var footerIconName: String {
+        switch tab.kind {
+        case .launcher:   return "doc.badge.plus"
+        case .fileBrowser: return "folder.fill"
+        case .editor:     return tab.document.fileURL == nil ? "doc.text" : "doc"
+        }
     }
 
     private var accessibilityLabel: String {

@@ -54,16 +54,19 @@ struct EditorView: View {
         // editor on iPad portrait.
         return ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
+                // Snap between launcher and editor with no transition.
+                // The kind-flip path used to wrap this in a fade + scale,
+                // but on iPhone the surrounding layout (nav title, accessory
+                // bar, keyboard animations) stacked with it produced a
+                // noticeably janky in-animation when a new tab was created.
+                // The kind-flip itself is now visually instant.
                 Group {
                     if let override = tabContentOverride {
                         override
-                            .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
                     } else {
                         splitOrSingleEditor
-                            .transition(.opacity)
                     }
                 }
-                .animation(.easeInOut(duration: 0.18), value: tabContentOverride == nil)
                 .frame(maxHeight: .infinity)
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
