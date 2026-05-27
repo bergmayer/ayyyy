@@ -25,16 +25,55 @@ final class EditorSession {
         self.selectedTabID = initial.id
     }
 
-    /// Self-repairs a drifted selection; an empty `tabs` is a
-    /// programmer error (close-tab invariant).
+    /// Lazy phantom that fills in when the user has closed every
+    /// real tab. It's NOT in `tabs` (so the tab bar stays empty),
+    /// but reads of `activeTab` return it so `EditorScene` always
+    /// has a renderable document/state. Promoted to a real tab via
+    /// `promoteEmptyStateIntoTabs` when the user picks something
+    /// from the launcher.
+    private var _emptyStatePlaceholder: TabModel?
+
+    private func emptyStatePlaceholder() -> TabModel {
+        if let cached = _emptyStatePlaceholder { return cached }
+        let placeholder = TabModel()
+        placeholder.kind = .launcher
+        _emptyStatePlaceholder = placeholder
+        return placeholder
+    }
+
+    /// `true` when there are no real tabs and the scene is showing
+    /// the empty-state launcher. Tab bar uses this to stay hidden
+    /// and the launcher's pick handlers to promote the placeholder
+    /// into a real tab.
+    var isEmpty: Bool { tabs.isEmpty }
+
+    /// Returns the active real tab when one exists; otherwise the
+    /// lazy empty-state placeholder. EditorScene only reads through
+    /// here so the whole chrome (toolbar, status bar, override
+    /// content) stays renderable when `tabs.isEmpty`.
     var activeTab: TabModel {
         if let tab = tabs.first(where: { $0.id == selectedTabID }) { return tab }
-        assertionFailure("selectedTabID \(selectedTabID) not in tabs — session is out of sync")
-        guard let first = tabs.first else {
-            preconditionFailure("EditorSession invariant violated: tabs is empty")
+        if let first = tabs.first {
+            selectedTabID = first.id
+            return first
         }
-        selectedTabID = first.id
-        return first
+        return emptyStatePlaceholder()
+    }
+
+    /// Called by the launcher's pick handlers when the placeholder
+    /// is the surface they're mutating — the user picked a template
+    /// / draft while in the empty state, so we need to turn the
+    /// placeholder into a real first-class tab before adoption.
+    /// Returns the now-real tab so the caller can keep mutating it.
+    @discardableResult
+    func promoteEmptyStateIntoTabs() -> TabModel {
+        let placeholder = emptyStatePlaceholder()
+        if !tabs.contains(where: { $0.id == placeholder.id }) {
+            tabs.append(placeholder)
+        }
+        selectedTabID = placeholder.id
+        _emptyStatePlaceholder = nil
+        return placeholder
     }
 
     /// Default `.launcher` so every Cmd-T lands on the document
@@ -68,10 +107,11 @@ final class EditorSession {
         case discard
     }
 
-    /// Always succeeds. When the last tab closes, spawns a fresh
-    /// launcher in its place so the window keeps a renderable surface
-    /// — Safari iPad's "Start Page" behavior. To destroy the whole
-    /// window, use `CommandActions.closeWindow()` instead.
+    /// Always succeeds. Allows `tabs` to drain to empty — the
+    /// window stays open and `activeTab` falls back to a lazy
+    /// empty-state placeholder so the launcher fills the editor
+    /// region without occupying a real tab slot. To destroy the
+    /// whole window, use `CommandActions.closeWindow()` (⌘⇧W).
     @discardableResult
     func closeTab(_ id: UUID, disposition: CloseDisposition = .archive) -> Bool {
         guard let idx = tabs.firstIndex(where: { $0.id == id }) else { return false }
@@ -81,12 +121,7 @@ final class EditorSession {
         }
         let wasActive = (selectedTabID == id)
         tabs.remove(at: idx)
-        if tabs.isEmpty {
-            let fresh = TabModel()
-            fresh.kind = .launcher
-            tabs.append(fresh)
-            selectedTabID = fresh.id
-        } else if wasActive {
+        if !tabs.isEmpty, wasActive {
             selectedTabID = tabs[max(0, idx - 1)].id
         }
         return true

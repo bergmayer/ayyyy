@@ -16,6 +16,10 @@ struct NewDocumentLauncherView: View {
     /// the only tab the window stays open with another launcher
     /// taking its place.
     let onCancel: () -> Void
+    /// `false` when this launcher is filling the window's empty
+    /// state (no real tabs left) — there's nothing meaningful to
+    /// cancel back to, so the Cancel chip is hidden.
+    let showsCancel: Bool
 
     /// Refreshed on each appear — the user may have deleted a draft
     /// in another window or saved one out of the recovery pool.
@@ -59,8 +63,10 @@ struct NewDocumentLauncherView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer(minLength: 12)
-            Button("Cancel", action: onCancel)
-                .buttonStyle(.bordered)
+            if showsCancel {
+                Button("Cancel", action: onCancel)
+                    .buttonStyle(.bordered)
+            }
         }
     }
 

@@ -29,8 +29,14 @@ enum DeviceIdiom {
     }
 
     /// `true` on iPad / Mac Catalyst / visionOS — anything that can
-    /// host multiple scenes side by side.
+    /// host multiple scenes side by side. Affirmative check rather
+    /// than `!isPhone` so an `.unspecified` idiom (which can show
+    /// up briefly during scene setup, or on edge-case hardware)
+    /// doesn't accidentally enable multi-window UI on iPhone.
     static var supportsMultipleWindows: Bool {
-        !isPhone
+        switch userInterfaceIdiom {
+        case .pad, .mac, .vision: return true
+        default: return false
+        }
     }
 }

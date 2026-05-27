@@ -367,24 +367,40 @@ struct EditorScene: View {
                 adoptDraftIntoActiveTab(draft)
             },
             onPickOpenFile: {
-                session.activeTab.kind = .fileBrowser
+                promotePlaceholderIfNeeded()
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    session.activeTab.kind = .fileBrowser
+                }
             },
             onCancel: {
-                // Same path as ⌘W on a launcher tab — closeTab
-                // either pops the launcher and reveals a sibling
-                // editor tab, or (if this is the only tab) spins
-                // up a fresh launcher in its place. Either way
-                // the window stays open.
+                // From a real launcher tab, request-close flips it
+                // to either a sibling editor tab or the empty state.
+                // The empty state hides the Cancel button entirely
+                // (via showsCancel), so we never reach here for it.
                 CommandActions.requestCloseTab(session.activeTab.id, in: session)
-            }
+            },
+            showsCancel: !session.isEmpty
         )
+    }
+
+    /// If the active surface is the empty-state placeholder, promote
+    /// it into the real `tabs` array before the caller mutates it —
+    /// otherwise their edits would land on a phantom that no tab bar
+    /// ever shows.
+    private func promotePlaceholderIfNeeded() {
+        if session.isEmpty {
+            session.promoteEmptyStateIntoTabs()
+        }
     }
 
     /// Loads the URL into the active tab's existing document — same
     /// identity, so the tab pill stays stable across the transition.
     private func adoptPickedFileIntoActiveTab(_ url: URL) {
+        promotePlaceholderIfNeeded()
         let tab = session.activeTab
-        tab.kind = .editor
+        withAnimation(.easeInOut(duration: 0.18)) {
+            tab.kind = .editor
+        }
         openURL(url)
     }
 
@@ -393,6 +409,7 @@ struct EditorScene: View {
     /// — `fileURL` stays nil so ⌘S prompts for a save location, and
     /// the next keystroke kicks the draft autosave loop.
     private func adoptTemplateIntoActiveTab(_ template: TemplateRecord) {
+        promotePlaceholderIfNeeded()
         let tab = session.activeTab
         let body = TemplatesStore.shared.loadContent(template) ?? ""
         tab.document.text = body
@@ -402,7 +419,9 @@ struct EditorScene: View {
         tab.state.fileURL = nil
         tab.state.savedBaselineText = ""
         tab.state.languageIdentifier = LanguageRegistry.identifier(for: template.url)
-        tab.kind = .editor
+        withAnimation(.easeInOut(duration: 0.18)) {
+            tab.kind = .editor
+        }
     }
 
     /// Adopts an existing draft into the active launcher tab. URL-
@@ -417,6 +436,7 @@ struct EditorScene: View {
     /// either way — the user keeps the drafted bytes while
     /// resolving.
     private func adoptDraftIntoActiveTab(_ draft: DraftRecord) {
+        promotePlaceholderIfNeeded()
         let tab = session.activeTab
         let text = (try? String(contentsOf: draft.url, encoding: .utf8))
             ?? (try? String(contentsOf: draft.url, encoding: .isoLatin1))
@@ -438,7 +458,9 @@ struct EditorScene: View {
                 tab.state.fileURL = resolved.url
                 tab.state.languageIdentifier = LanguageRegistry.identifier(for: resolved.url)
                 tab.state.savedBaselineText = ""
-                tab.kind = .editor
+                withAnimation(.easeInOut(duration: 0.18)) {
+                    tab.kind = .editor
+                }
                 bus.editing.sourceStaleCheck = .missing(
                     tabID: tab.id,
                     displayName: resolved.url.lastPathComponent
@@ -459,7 +481,9 @@ struct EditorScene: View {
                 ?? (try? String(contentsOf: resolved.url, encoding: .isoLatin1))
                 ?? ""
             tab.state.savedBaselineText = onDisk
-            tab.kind = .editor
+            withAnimation(.easeInOut(duration: 0.18)) {
+                tab.kind = .editor
+            }
             // Did anything change between draft creation and now?
             // Compare the draft's recorded attrs to current disk.
             // If we don't have recorded attrs (older draft), skip —
@@ -476,7 +500,9 @@ struct EditorScene: View {
             return
         }
         tab.state.savedBaselineText = ""
-        tab.kind = .editor
+        withAnimation(.easeInOut(duration: 0.18)) {
+            tab.kind = .editor
+        }
     }
 
     private static func resolveBookmark(_ data: Data) -> (url: URL, isStale: Bool)? {
@@ -661,7 +687,9 @@ struct EditorScene: View {
         // pending newWindow handoff) transitions the surface to the
         // editor synchronously, before the load finishes.
         if session.activeTab.kind != .editor {
-            session.activeTab.kind = .editor
+            withAnimation(.easeInOut(duration: 0.18)) {
+                session.activeTab.kind = .editor
+            }
         }
         state.loadTask?.cancel()
 

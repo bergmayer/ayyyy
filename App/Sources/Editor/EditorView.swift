@@ -57,10 +57,13 @@ struct EditorView: View {
                 Group {
                     if let override = tabContentOverride {
                         override
+                            .transition(.opacity.combined(with: .scale(scale: 0.985, anchor: .top)))
                     } else {
                         splitOrSingleEditor
+                            .transition(.opacity)
                     }
                 }
+                .animation(.easeInOut(duration: 0.18), value: tabContentOverride == nil)
                 .frame(maxHeight: .infinity)
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
