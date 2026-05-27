@@ -847,7 +847,8 @@ struct EditorView: View {
         ForEach(statusEncodingChoices, id: \.self) { encoding in
             let title = String.localizedName(of: encoding)
             Button {
-                state.fileEncoding = FileEncoding(encoding: encoding)
+                claimFocus()
+                CommandActions.setEncoding(FileEncoding(encoding: encoding))
             } label: {
                 if document.fileEncoding.encoding == encoding && !document.fileEncoding.withUTF8BOM {
                     Label(title, systemImage: "checkmark")
@@ -859,7 +860,8 @@ struct EditorView: View {
         if statusEncodingChoices.contains(.utf8) {
             Divider()
             Button {
-                state.fileEncoding = FileEncoding(encoding: .utf8, withUTF8BOM: true)
+                claimFocus()
+                CommandActions.setEncoding(FileEncoding(encoding: .utf8, withUTF8BOM: true))
             } label: {
                 if document.fileEncoding.encoding == .utf8 && document.fileEncoding.withUTF8BOM {
                     Label("Unicode (UTF-8) with BOM", systemImage: "checkmark")
@@ -881,7 +883,8 @@ struct EditorView: View {
     private var lineEndingMenuChoices: some View {
         ForEach(LineEnding.allCases, id: \.self) { ending in
             Button {
-                state.lineEnding = ending
+                claimFocus()
+                CommandActions.setLineEnding(ending)
             } label: {
                 if document.lineEnding == ending {
                     Label("\(ending.label) (\(ending.description))", systemImage: "checkmark")
@@ -903,7 +906,8 @@ struct EditorView: View {
     private var languageMenuChoices: some View {
         ForEach(LanguageRegistry.all, id: \.identifier) { language in
             Button {
-                state.languageIdentifier = language.identifier
+                claimFocus()
+                CommandActions.setLanguage(language.identifier)
             } label: {
                 if state.languageIdentifier == language.identifier {
                     Label(language.displayName, systemImage: "checkmark")

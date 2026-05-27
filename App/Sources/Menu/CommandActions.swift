@@ -428,6 +428,14 @@ enum CommandActions {
         state?.fileEncoding = encoding
     }
 
+    /// Lightweight "set the document's line-ending preference"
+    /// — only affects how subsequent newline insertions render.
+    /// Use `applyLineEnding(_:)` to also rewrite every existing
+    /// break in the buffer.
+    static func setLineEnding(_ lineEnding: LineEnding) {
+        state?.lineEnding = lineEnding
+    }
+
     static func reinterpretWithEncoding(_ encoding: FileEncoding) {
         state?.reinterpretWithEncoding?(encoding)
     }
