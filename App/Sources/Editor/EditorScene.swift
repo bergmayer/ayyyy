@@ -504,10 +504,14 @@ struct EditorScene: View {
         return (url, stale)
     }
 
-    /// Keyed by tab id so swapping tabs mid-switcher animates right.
-    private var switcherMatchID: String {
-        "tab-morph-\(session.selectedTabID)"
-    }
+    /// Stable across tab switches. Earlier this keyed off the
+    /// active tab's id, but that made every Cmd-T / + tap fire a
+    /// matched-geometry-effect interpolation between the old and
+    /// new tab's frames — visually it looked like the new tab was
+    /// zooming in from the previous one. The switcher morph still
+    /// works because the active card in `TabSwitcherView` reads
+    /// this same constant string for the currently-selected tab.
+    private var switcherMatchID: String { "tab-morph-active" }
 
     private func dismissSwitcher() {
         withAnimation(.appSwitcherMorph) {

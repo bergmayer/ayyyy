@@ -137,11 +137,11 @@ struct EditableTitleView: View {
         } label: {
             Label("Save As…", systemImage: "square.and.arrow.down")
         }
-        // "Save as Draft" parks the live buffer in the recovery pool
-        // without writing to disk — useful for an untitled buffer
-        // when the user wants to switch tasks but isn't ready to pick
-        // a filename. The action's a no-op for clean URL-backed docs,
-        // hidden in that case to avoid menu clutter.
+        // Save as Draft keeps the edits in the unsaved-drafts list
+        // without writing to a file — useful for an untitled buffer
+        // when the user wants to switch tasks but isn't ready to
+        // pick a filename. Hidden for clean URL-backed docs since
+        // there's nothing to park.
         if currentTab?.document.isDirty == true || currentFileURL == nil {
             Button {
                 onInteraction?()

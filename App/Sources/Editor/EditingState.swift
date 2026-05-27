@@ -79,9 +79,9 @@ struct PendingClose: Identifiable {
 /// "Close Other Tabs" / "Close Tabs to the Right" / "Close All Tabs"
 /// route through this when at least one of the tabs in the batch
 /// has unsaved changes. The user picks Discard All (drops drafts)
-/// or Save All to Drafts (parks the live bytes for launcher
-/// recovery) — there's no per-tab Save-and-Close since the prompt
-/// is meant to be quick.
+/// or Save All to Drafts (keeps each tab's edits in the unsaved-
+/// drafts list so they're recoverable from the launcher). No per-
+/// tab Save-and-Close — the prompt is meant to be quick.
 @MainActor
 struct PendingBatchClose: Identifiable {
     let id = UUID()

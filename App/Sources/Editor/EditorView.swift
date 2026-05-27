@@ -128,9 +128,10 @@ struct EditorView: View {
             Button(pending.isUntitled ? "Save…" : "Save and Close") {
                 CommandActions.confirmSaveAndClose(pending)
             }
-            // "Save as Draft" parks the live buffer in the launcher's
-            // recovery pool without writing to disk — fastest path
-            // to dismiss the dialog without losing work.
+            // Save as Draft keeps the edits in the unsaved-drafts
+            // list (reachable from the launcher) without writing
+            // them to a file — fastest way out of the dialog when
+            // the user isn't ready to pick a filename.
             Button("Save as Draft") {
                 CommandActions.saveAsDraftAndClose(pending)
             }
@@ -140,7 +141,7 @@ struct EditorView: View {
             Button("Cancel", role: .cancel) { CommandActions.cancelPendingClose() }
         } message: { pending in
             Text(pending.isUntitled
-                 ? "This document is untitled. Save it to a file, park it as a draft, or discard the contents."
+                 ? "This document is untitled. Save it to a file, keep it as an unsaved draft, or discard the contents."
                  : "This document has unsaved changes since its last save.")
         }
         // Stale-source safeguards. Three flavors, one alert. Wrapped
@@ -345,7 +346,7 @@ struct EditorView: View {
         let suffix = pending.dirtyCount == 1
             ? "1 of them has unsaved changes."
             : "\(pending.dirtyCount) of them have unsaved changes."
-        return "\(scope). \(suffix) Save to Drafts parks the live bytes for launcher recovery; Discard drops them."
+        return "\(scope). \(suffix) Save to Drafts keeps the edits in the unsaved-drafts list so you can pick them up later; Discard throws them away."
     }
 
     /// Only the scene that owns the stale tab presents — otherwise
