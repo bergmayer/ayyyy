@@ -353,24 +353,26 @@ enum CommandActions {
 
     // MARK: - Snippets / Clipboard history
 
-    /// Insert a snippet's body at the current cursor (replacing the
-    /// selection if any). Snippets get inserted as-is — no placeholder
-    /// substitution yet; that's a future hook.
-    static func insertSnippet(_ snippet: Snippet) {
-        insertAtSelection(snippet.content)
+    /// Insert the named slot's body at the current cursor (replacing
+    /// the selection if any). Empty/unconfigured slots no-op so menu
+    /// shortcuts can't insert blank strings.
+    static func insertSnippet(slotID: Int) {
+        guard let slot = SnippetsStore.shared.slot(id: slotID),
+              slot.isConfigured else { return }
+        insertAtSelection(slot.content)
     }
 
-    /// Save the current selection as a new snippet, named with a
-    /// timestamp. The user can rename it later in Settings → Snippets.
+    /// Save the current selection into the first unconfigured slot,
+    /// named with a timestamp. Silently no-ops if every slot is in
+    /// use — the user manages the ten-slot pool from Manage Snippets.
     static func saveSelectionAsSnippet() {
         guard let textView = actions else { return }
         let range = textView.selectedRange
         guard range.length > 0, let body = textView.text(in: range) else { return }
         let name = "Snippet \(Self.snippetDateFormatter.string(from: Date()))"
-        SnippetsStore.shared.add(Snippet(name: name, content: body))
+        SnippetsStore.shared.saveToFirstEmpty(name: name, content: body)
     }
 
-    static func presentSnippetPicker()    { presentSheet(.snippetPicker) }
     static func presentSnippetsManager()  { presentSheet(.snippetsManager) }
     static func presentClipboardHistory() { presentSheet(.clipboardHistory) }
     /// Open the drafts-recovery sheet on demand — surfaces the

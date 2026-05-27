@@ -977,8 +977,6 @@ struct EditorView: View {
             PrefixSuffixLinesSheet()
         case .insertLoremIpsum:
             InsertLoremIpsumSheet()
-        case .snippetPicker:
-            SnippetPickerSheet()
         case .snippetsManager:
             SnippetsManagerSheet()
         case .draftsRecovery:

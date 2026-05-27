@@ -97,8 +97,10 @@ enum AppPreferenceKey {
     static let showToolbar  = "showToolbar"
 
     // MARK: Snippets
-    /// JSON-encoded `[Snippet]` — user-defined named text macros.
-    static let snippets = "snippets"
+    /// JSON-encoded `[Snippet]` — ten fixed text-macro slots, parallel
+    /// to JS Transforms. Slots without `content` stay disabled in the
+    /// Text ▸ Snippets menu rather than disappearing.
+    static let snippetSlots = "snippetSlots"
     /// JSON-encoded `[ClosedTabRecord]` — closed-tab recovery
     /// pool that survives window close and app restart.
     static let closedTabRecords = "closedTabRecords"

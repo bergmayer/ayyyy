@@ -289,7 +289,6 @@ private struct TypingPreferencesTab: View {
 
     @State private var snippetsStore = SnippetsStore.shared
     @State private var editingSnippet: Snippet?
-    @State private var addingSnippet: Bool = false
 
     @State private var jsStore = JSTransformStore.shared
     @State private var editingJSSlot: JSTransformSlot?
@@ -317,52 +316,44 @@ private struct TypingPreferencesTab: View {
                 Text("Pressing return on a list line repeats the bullet (-, *, +) or increments the number on the next line. Pressing return on an empty list line drops the marker.")
             }
 
-            // Palette ▸ Insert Snippet, the keyboard accessory bar,
-            // and Edit ▸ Save Selection as Snippet all share this store.
+            // Ten fixed slots mirroring JS Transforms. The Text ▸
+            // Snippets menu and Edit ▸ Save Selection as Snippet both
+            // funnel here; tap a row to edit name + content.
             Section {
-                if snippetsStore.snippets.isEmpty {
-                    Text("No snippets yet. Tap **Add Snippet** to create one, or save the current selection from the editor.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(snippetsStore.snippets) { snippet in
-                        Button {
-                            editingSnippet = snippet
-                        } label: {
-                            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(snippet.name.isEmpty ? "(unnamed)" : snippet.name)
-                                        .foregroundStyle(.primary)
-                                    Text(snippetPreview(snippet.content))
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                }
-                                Spacer(minLength: 0)
-                                Image(systemName: "chevron.right")
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
+                ForEach(snippetsStore.slots) { slot in
+                    Button {
+                        editingSnippet = slot
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text("\(slot.id).")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .trailing)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(slot.displayName)
+                                    .foregroundStyle(slot.isConfigured ? .primary : .secondary)
+                                Text(slot.isConfigured ? snippetPreview(slot.content) : "Empty")
+                                    .font(.caption.monospaced())
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
                             }
-                            .contentShape(.rect)
+                            Spacer(minLength: 0)
+                            Text(SnippetsStore.shortcutHint(for: slot.id))
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.tertiary)
+                            Image(systemName: "chevron.right")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
                         }
-                        .buttonStyle(.plain)
+                        .contentShape(.rect)
                     }
-                    .onDelete { offsets in
-                        snippetsStore.remove(at: offsets)
-                    }
-                    .onMove { source, destination in
-                        snippetsStore.move(from: source, to: destination)
-                    }
-                }
-                Button {
-                    addingSnippet = true
-                } label: {
-                    Label("Add Snippet", systemImage: "plus.circle.fill")
+                    .buttonStyle(.plain)
                 }
             } header: {
                 Text("Snippets")
             } footer: {
-                Text("Snippets insert their content at the cursor. Invoke from the command palette ⇧⌘P → \"Insert Snippet…\".")
+                Text("Ten fixed slots, invoked from the **Text ▸ Snippets** menu or with ⌥⌘1–⌥⌘9 (⌥⌘0 for slot 10). Edit ▸ Save Selection as Snippet writes into the first empty slot.")
             }
 
             Section {
@@ -415,8 +406,8 @@ private struct TypingPreferencesTab: View {
                 Text("Manage system-wide typing shortcuts (e.g. \"omw\" → \"On my way!\") in iOS Settings ▸ General ▸ Keyboard ▸ Text Replacement. They're shared across every app on your device.")
             }
         }
-        .sheet(item: $editingSnippet) { snippet in
-            SnippetEditorSheet(snippet: bindingForExisting(snippet)) { updated in
+        .sheet(item: $editingSnippet) { slot in
+            SnippetEditorSheet(slot: slot) { updated in
                 snippetsStore.update(updated)
             }
         }
@@ -425,26 +416,11 @@ private struct TypingPreferencesTab: View {
                 jsStore.update(updated)
             }
         }
-        .sheet(isPresented: $addingSnippet) {
-            // Empty seed; `add` only fires on Save.
-            SnippetEditorSheet(snippet: .constant(Snippet(name: "", content: ""))) { created in
-                snippetsStore.add(created)
-            }
-        }
     }
 
     private func slotShortcutHint(for id: Int) -> String {
         let key = id == 10 ? "0" : "\(id)"
         return "⌃⌥\(key)"
-    }
-
-    private func bindingForExisting(_ snippet: Snippet) -> Binding<Snippet> {
-        Binding(
-            get: { snippet },
-            set: { newValue in
-                editingSnippet = newValue
-            }
-        )
     }
 
     private func snippetPreview(_ body: String) -> String {

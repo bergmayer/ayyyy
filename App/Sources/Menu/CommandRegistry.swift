@@ -272,9 +272,6 @@ enum CommandRegistry {
         // MARK: Snippets / Clipboard
 
         commands += [
-            .init(id: "snipPick",   title: "Insert Snippet…",        category: .snippets,
-                  synonyms: ["paste snippet", "expand snippet"],
-                  action: CommandActions.presentSnippetPicker),
             .init(id: "snipSave",   title: "Save Selection as Snippet", category: .snippets,
                   synonyms: ["add snippet", "create snippet"],
                   action: CommandActions.saveSelectionAsSnippet,
@@ -285,6 +282,22 @@ enum CommandRegistry {
                   action: CommandActions.presentClipboardHistory,
                   isEnabled: { true })
         ]
+
+        // Per-slot snippet entries so the palette surfaces "Snippet
+        // 3: Email Signature" alongside everything else. Slots are
+        // built lazily from the live store so renames propagate.
+        for slot in SnippetsStore.shared.slots {
+            let id = slot.id
+            commands.append(.init(
+                id: "snipSlot\(id)",
+                title: "Insert \(slot.displayName)",
+                category: .snippets,
+                shortcutHint: SnippetsStore.shortcutHint(for: id),
+                synonyms: ["snippet \(id)", slot.name],
+                action: { CommandActions.insertSnippet(slotID: id) },
+                isEnabled: { SnippetsStore.shared.slot(id: id)?.isConfigured ?? false }
+            ))
+        }
 
         // MARK: Markdown wrappers + headings + structural inserts
 

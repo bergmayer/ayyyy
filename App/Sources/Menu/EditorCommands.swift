@@ -377,18 +377,7 @@ struct EditorCommands: Commands {
                 }
 
                 Menu("Snippets") {
-                    Button("Insert Snippet…", action: focused(CommandActions.presentSnippetPicker))
-                        .keyboardShortcut(AppShortcut.insertSnippet)
-                    if !snippetsStore.snippets.isEmpty {
-                        Divider()
-                        ForEach(snippetsStore.snippets) { snippet in
-                            Button(snippet.name.isEmpty ? "(unnamed)" : snippet.name) {
-                                focused { CommandActions.insertSnippet(snippet) }
-                            }
-                        }
-                    }
-                    Divider()
-                    Button("Manage Snippets…", action: focused(CommandActions.presentSnippetsManager))
+                    snippetItems
                 }
 
                 Menu("JavaScript Transforms") {
@@ -673,15 +662,38 @@ struct EditorCommands: Commands {
             Button(slot.displayName) {
                 focused { CommandActions.runJSTransform(slotID: slot.id) }
             }
-            .keyboardShortcut(jsShortcutKey(for: slot.id), modifiers: [.control, .option])
+            .keyboardShortcut(slotShortcutKey(for: slot.id), modifiers: [.control, .option])
             .disabled(!slot.isConfigured)
         }
         Divider()
         Button("Manage Transforms…", action: focused(CommandActions.presentPreferences))
     }
 
-    private func jsShortcutKey(for id: Int) -> KeyEquivalent {
-        // Slot 10 → "0", matching the tab-jump scheme.
+    /// Snippets menu, mirroring `jsTransformItems`: ten fixed slots,
+    /// ⌥⌘1-9 + ⌥⌘0 for slot 10. Empty slots stay greyed so the user
+    /// can see which chords are still open. Save Selection +
+    /// Manage… anchor the bottom.
+    @ViewBuilder
+    private var snippetItems: some View {
+        let slots = snippetsStore.slots
+        ForEach(slots) { slot in
+            Button(slot.displayName) {
+                focused { CommandActions.insertSnippet(slotID: slot.id) }
+            }
+            .keyboardShortcut(slotShortcutKey(for: slot.id), modifiers: [.command, .option])
+            .disabled(!slot.isConfigured)
+        }
+        Divider()
+        Button("Save Selection as Snippet",
+               action: focused(CommandActions.saveSelectionAsSnippet))
+            .disabled((editorState?.selectedRange.length ?? 0) == 0)
+        Button("Manage Snippets…",
+               action: focused(CommandActions.presentSnippetsManager))
+    }
+
+    /// Slot 10 → "0", matching the tab-jump scheme. Shared by JS
+    /// Transforms and Snippets so the two ten-slot menus keep parity.
+    private func slotShortcutKey(for id: Int) -> KeyEquivalent {
         switch id {
         case 10: return "0"
         default: return KeyEquivalent(Character("\(id)"))

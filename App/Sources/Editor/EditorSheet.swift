@@ -19,7 +19,6 @@ enum EditorSheet: Identifiable {
     case preferences
     case prefixSuffixLines
     case insertLoremIpsum
-    case snippetPicker
     case snippetsManager
     case clipboardHistory
     case draftsRecovery
@@ -56,7 +55,6 @@ enum EditorSheet: Identifiable {
         case .preferences:           return "preferences"
         case .prefixSuffixLines:     return "prefixSuffix"
         case .insertLoremIpsum:      return "lipsum"
-        case .snippetPicker:         return "snippetPicker"
         case .snippetsManager:       return "snippetsManager"
         case .clipboardHistory:      return "clipboardHistory"
         case .draftsRecovery:        return "draftsRecovery"

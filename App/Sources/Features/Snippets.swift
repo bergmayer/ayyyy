@@ -3,12 +3,29 @@ import UIKit
 
 // MARK: - Snippets model
 
-/// A named text macro. `content` is inserted at the cursor when the
-/// snippet is invoked from the Snippets palette / menu.
+/// One snippet slot. Ten slots (1...10) persist permanently and map
+/// to the Text ▸ Snippets menu / keyboard shortcuts — mirrors the
+/// `JSTransformSlot` model so the two surfaces feel the same.
 struct Snippet: Codable, Equatable, Identifiable {
-    var id: UUID = UUID()
+    var id: Int       // 1...10
     var name: String
     var content: String
+
+    static func empty(id: Int) -> Snippet {
+        Snippet(id: id, name: "", content: "")
+    }
+
+    /// Empty `content` (whitespace-only counts as empty) means the
+    /// slot's menu entry stays visible but disabled — placeholders
+    /// for unset slots, parallel to JS Transforms.
+    var isConfigured: Bool {
+        !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? "Snippet \(id)" : trimmed
+    }
 }
 
 @MainActor
@@ -16,166 +33,100 @@ struct Snippet: Codable, Equatable, Identifiable {
 final class SnippetsStore {
 
     static let shared = SnippetsStore()
+    static let slotCount = 10
 
-    private(set) var snippets: [Snippet]
+    private(set) var slots: [Snippet]
 
     private init() {
-        self.snippets = Self.load() ?? []
+        self.slots = Self.load() ?? Self.defaultSlots()
     }
 
-    func add(_ snippet: Snippet) {
-        snippets.append(snippet)
-        save()
+    private static func defaultSlots() -> [Snippet] {
+        (1...slotCount).map(Snippet.empty)
     }
 
     func update(_ snippet: Snippet) {
-        guard let idx = snippets.firstIndex(where: { $0.id == snippet.id }) else { return }
-        snippets[idx] = snippet
+        guard let idx = slots.firstIndex(where: { $0.id == snippet.id }) else { return }
+        slots[idx] = snippet
         save()
     }
 
-    func remove(at offsets: IndexSet) {
-        snippets.remove(atOffsets: offsets)
-        save()
+    /// Look up a slot by its 1-based id. Returns nil for out-of-range
+    /// callers (e.g. menu shortcuts that lost sync with storage).
+    func slot(id: Int) -> Snippet? {
+        slots.first(where: { $0.id == id })
     }
 
-    func move(from source: IndexSet, to destination: Int) {
-        snippets.move(fromOffsets: source, toOffset: destination)
+    /// Writes `name`/`content` into the first unconfigured slot.
+    /// Returns the slot id, or nil if every slot is already used —
+    /// the menu's "Save Selection as Snippet" action surfaces the
+    /// failure as a status message rather than overwriting silently.
+    @discardableResult
+    func saveToFirstEmpty(name: String, content: String) -> Int? {
+        guard let idx = slots.firstIndex(where: { !$0.isConfigured }) else { return nil }
+        let id = slots[idx].id
+        slots[idx] = Snippet(id: id, name: name, content: content)
+        save()
+        return id
+    }
+
+    func clear(slotId id: Int) {
+        guard let idx = slots.firstIndex(where: { $0.id == id }) else { return }
+        slots[idx] = Snippet.empty(id: id)
         save()
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(snippets) else { return }
-        UserDefaults.standard.set(data, forKey: AppPreferenceKey.snippets)
+        guard let data = try? JSONEncoder().encode(slots) else { return }
+        UserDefaults.standard.set(data, forKey: AppPreferenceKey.snippetSlots)
     }
 
     private static func load() -> [Snippet]? {
-        guard let data = UserDefaults.standard.data(forKey: AppPreferenceKey.snippets),
-              let decoded = try? JSONDecoder().decode([Snippet].self, from: data)
+        guard let data = UserDefaults.standard.data(forKey: AppPreferenceKey.snippetSlots),
+              let decoded = try? JSONDecoder().decode([Snippet].self, from: data),
+              decoded.count == SnippetsStore.slotCount
         else { return nil }
         return decoded
     }
 }
 
-// MARK: - Snippets picker sheet
+// MARK: - Snippet slot editor
 
-/// Sheet for picking a snippet to insert. Selecting a row inserts
-/// the snippet's content at the cursor and dismisses the sheet.
-struct SnippetPickerSheet: View {
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var store = SnippetsStore.shared
-    @State private var query: String = ""
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if store.snippets.isEmpty {
-                    ContentUnavailableView(
-                        "No snippets yet",
-                        systemImage: "doc.text",
-                        description: Text("Add snippets in Settings → Typing, or save the current selection from the Edit menu.")
-                    )
-                } else {
-                    // List + tap-gesture row instead of Button-in-row.
-                    // On iPhone, a SwiftUI `Button` (even with
-                    // `.buttonStyle(.plain)`) inside a `List` row
-                    // competes with the List's own row hit area: the
-                    // row visibly highlights on touch but the
-                    // Button's action never fires, so snippet rows
-                    // looked unresponsive. Anchoring the tap on the
-                    // row's HStack via `.contentShape(.rect)` +
-                    // `.onTapGesture` makes the whole row a single,
-                    // reliable hit target on both idioms.
-                    List {
-                        ForEach(filtered) { snippet in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(snippet.name).foregroundStyle(.primary)
-                                    Text(preview(of: snippet.content))
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                }
-                                Spacer(minLength: 0)
-                            }
-                            .contentShape(.rect)
-                            .onTapGesture {
-                                let target = snippet
-                                dismiss()
-                                // Defer the insert until the sheet's
-                                // dismissal animation finishes — on
-                                // iPhone the editor only re-becomes
-                                // first responder after the sheet is
-                                // gone, so inserting mid-dismiss
-                                // either drops the keystroke or
-                                // lands it on the wrong selection.
-                                Task { @MainActor in
-                                    try? await Task.sleep(for: Timing.paletteHandoff)
-                                    CommandActions.insertSnippet(target)
-                                }
-                            }
-                        }
-                    }
-                    .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always))
-                }
-            }
-            .navigationTitle("Insert Snippet")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-            }
-        }
-    }
-
-    private var filtered: [Snippet] {
-        guard !query.isEmpty else { return store.snippets }
-        return store.snippets.filter { $0.name.localizedCaseInsensitiveContains(query) }
-    }
-
-    private func preview(of body: String) -> String {
-        body.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" }).first.map(String.init) ?? ""
-    }
-}
-
-/// Editor for a single snippet — used by Preferences. Pass a binding
-/// to the snippet being edited; this sheet doesn't add or remove.
+/// Per-slot editor presented from the Typing settings pane and from
+/// the Manage Snippets sheet. Edits a copy of the slot; writes
+/// through on Save.
 struct SnippetEditorSheet: View {
 
     @Environment(\.dismiss) private var dismiss
-    @Binding var snippet: Snippet
+    @State private var draft: Snippet
     let onSave: (Snippet) -> Void
 
-    @State private var name: String
-    @State private var content: String
-
-    init(snippet: Binding<Snippet>, onSave: @escaping (Snippet) -> Void) {
-        self._snippet = snippet
+    init(slot: Snippet, onSave: @escaping (Snippet) -> Void) {
+        self._draft = State(initialValue: slot)
         self.onSave = onSave
-        self._name = State(initialValue: snippet.wrappedValue.name)
-        self._content = State(initialValue: snippet.wrappedValue.content)
     }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Name") {
-                    TextField("Snippet name", text: $name)
+                    TextField("e.g. Email Signature", text: $draft.name)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                 }
-                Section("Content") {
-                    TextEditor(text: $content)
+                Section {
+                    TextEditor(text: $draft.content)
                         .font(.body.monospaced())
                         .frame(minHeight: 220)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                } header: {
+                    Text("Content")
+                } footer: {
+                    Text("Inserted at the cursor as-is. Leave content empty to clear the slot.")
                 }
             }
-            .navigationTitle(snippet.name.isEmpty ? "New Snippet" : snippet.name)
+            .navigationTitle("Slot \(draft.id): \(draft.name.isEmpty ? "(unnamed)" : draft.name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -183,13 +134,9 @@ struct SnippetEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") {
-                        var updated = snippet
-                        updated.name = name
-                        updated.content = content
-                        onSave(updated)
+                        onSave(draft)
                         dismiss()
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
@@ -198,64 +145,28 @@ struct SnippetEditorSheet: View {
 
 // MARK: - Snippets manager sheet
 
-/// Full CRUD for the snippet library — Edit ▸ Snippets ▸ Manage
-/// Snippets opens here instead of bouncing into Preferences.
+/// Edit ▸ Snippets ▸ Manage Snippets opens here. Mirrors the JS
+/// Transforms settings layout: ten fixed rows, tap to edit.
 struct SnippetsManagerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var store = SnippetsStore.shared
-    /// Editor target. `Optional<Snippet>` instead of `Bool` so the
-    /// editor sheet can present per-snippet identity (and SwiftUI's
-    /// `.sheet(item:)` reuses the same view for new + edit).
-    @State private var editing: EditingTarget?
-
-    /// Wrapper carries both the snippet and whether this is a "new"
-    /// session (so the editor's Save creates vs. updates). Conforms to
-    /// `Identifiable` for `.sheet(item:)`.
-    private struct EditingTarget: Identifiable {
-        let id: UUID
-        var snippet: Snippet
-        let isNew: Bool
-    }
+    @State private var editing: Snippet?
 
     var body: some View {
         NavigationStack {
-            Group {
-                if store.snippets.isEmpty {
-                    ContentUnavailableView {
-                        Label("No snippets yet", systemImage: "doc.text")
-                    } description: {
-                        Text("Add a snippet with the + button. Snippets are inserted at the cursor from Edit ▸ Snippets ▸ Insert Snippet…")
-                    } actions: {
+            Form {
+                Section {
+                    ForEach(store.slots) { slot in
                         Button {
-                            beginAdd()
+                            editing = slot
                         } label: {
-                            Label("Add Snippet", systemImage: "plus")
+                            slotRow(slot)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.plain)
                     }
-                } else {
-                    List {
-                        ForEach(store.snippets) { snippet in
-                            Button {
-                                editing = EditingTarget(id: snippet.id, snippet: snippet, isNew: false)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(snippet.name).foregroundStyle(.primary)
-                                    Text(preview(of: snippet.content))
-                                        .font(.caption.monospaced())
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                }
-                                .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .onDelete { offsets in store.remove(at: offsets) }
-                        .onMove { from, to in store.move(from: from, to: to) }
-                    }
-                    .toolbar { EditButton() }
+                } footer: {
+                    Text("Ten fixed slots, invoked from **Text ▸ Snippets** in the menu or with ⌥⌘1–⌥⌘9 (⌥⌘0 for slot 10). Empty slots are greyed out in the menu.")
                 }
             }
             .navigationTitle("Manage Snippets")
@@ -264,39 +175,55 @@ struct SnippetsManagerSheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        beginAdd()
-                    } label: {
-                        Label("Add Snippet", systemImage: "plus")
-                    }
-                }
             }
-            .sheet(item: $editing) { target in
-                SnippetEditorSheet(
-                    snippet: Binding(
-                        get: { target.snippet },
-                        set: { editing?.snippet = $0 }
-                    ),
-                    onSave: { updated in
-                        if target.isNew {
-                            store.add(updated)
-                        } else {
-                            store.update(updated)
-                        }
-                    }
-                )
+            .sheet(item: $editing) { slot in
+                SnippetEditorSheet(slot: slot) { updated in
+                    store.update(updated)
+                }
             }
         }
     }
 
-    private func beginAdd() {
-        let blank = Snippet(name: "", content: "")
-        editing = EditingTarget(id: blank.id, snippet: blank, isNew: true)
+    @ViewBuilder
+    private func slotRow(_ slot: Snippet) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("\(slot.id).")
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 28, alignment: .trailing)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(slot.displayName)
+                    .foregroundStyle(slot.isConfigured ? .primary : .secondary)
+                Text(slot.isConfigured ? preview(of: slot.content) : "Empty")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+            Text(SnippetsStore.shortcutHint(for: slot.id))
+                .font(.caption.monospaced())
+                .foregroundStyle(.tertiary)
+            Image(systemName: "chevron.right")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+        .contentShape(.rect)
     }
 
     private func preview(of body: String) -> String {
-        body.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" }).first.map(String.init) ?? ""
+        body.split(omittingEmptySubsequences: true, whereSeparator: { $0 == "\n" })
+            .first.map(String.init) ?? ""
+    }
+}
+
+extension SnippetsStore {
+    /// Human-readable hint for the per-slot keyboard shortcut. Used
+    /// in Preferences + the manager sheet so the user can see which
+    /// keys map where without launching every slot.
+    static func shortcutHint(for id: Int) -> String {
+        let key = id == 10 ? "0" : "\(id)"
+        return "⌥⌘\(key)"
     }
 }
 

@@ -51,7 +51,6 @@ enum AppShortcut {
     static let moveLineDown     = KeyboardShortcut(.downArrow, modifiers: .option)
     static let indentSelection  = KeyboardShortcut("]")
     static let outdentSelection = KeyboardShortcut("[")
-    static let insertSnippet    = KeyboardShortcut("e", modifiers: [.command, .shift])
 
     // MARK: Markdown
     static let markdownBold      = KeyboardShortcut("b")
