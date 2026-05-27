@@ -766,6 +766,10 @@ struct EditorView: View {
         .buttonStyle(.plain)
         .help("Show All Tabs")
         .accessibilityLabel("Show All Tabs")
+        // Tap-and-hold gates the multi-tab management menu — same
+        // entries as the iPad chrome's overview button so the surface
+        // is consistent across idioms.
+        .contextMenu { TabOverviewContextMenu() }
     }
 
     private var phoneTabBadgeCount: Int? {

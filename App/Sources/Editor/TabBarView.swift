@@ -166,42 +166,8 @@ struct TabBarView: View {
         // Tap-and-hold (or long-press on iPad / right-click on Mac
         // Catalyst) gates the multi-tab management actions here so
         // they live in one place instead of repeating on every pill.
-        .contextMenu { showAllTabsContextMenu }
-    }
-
-    @ViewBuilder
-    private var showAllTabsContextMenu: some View {
-        Button {
-            AppStateBus.shared.scenes.claimFocus(session: session)
-            CommandActions.newTab()
-        } label: {
-            Label("Open New Tab", systemImage: "plus.square")
-        }
-        Divider()
-        Button(role: .destructive) {
-            AppStateBus.shared.scenes.claimFocus(session: session)
-            CommandActions.requestCloseTab(session.selectedTabID, in: session)
-        } label: {
-            Label("Close This Tab", systemImage: "xmark")
-        }
-        Button(role: .destructive) {
-            AppStateBus.shared.scenes.claimFocus(session: session)
-            CommandActions.requestCloseOtherTabs(except: session.selectedTabID, in: session)
-        } label: {
-            Label("Close Other Tabs", systemImage: "rectangle.stack.badge.minus")
-        }
-        Button(role: .destructive) {
-            AppStateBus.shared.scenes.claimFocus(session: session)
-            CommandActions.requestCloseTabsToRight(of: session.selectedTabID, in: session)
-        } label: {
-            Label("Close Tabs to the Right", systemImage: "rectangle.righthalf.inset.filled.arrow.right")
-        }
-        Button(role: .destructive) {
-            AppStateBus.shared.scenes.claimFocus(session: session)
-            CommandActions.requestCloseAllTabs(in: session)
-        } label: {
-            Label("Close All Tabs", systemImage: "xmark.square.fill")
-        }
+        // Shared with the iPhone status-bar overview button.
+        .contextMenu { TabOverviewContextMenu() }
     }
 
     private func tabLabel(_ tab: TabModel) -> String {

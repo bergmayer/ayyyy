@@ -185,12 +185,18 @@ struct WindowToolbar: View {
         }
     }
 
-    /// Undo + Command Palette — chrome, not customizable.
+    /// Undo + New Tab + Command Palette — chrome, not customizable.
+    /// New Tab sits between undo and the palette so the muscle-memory
+    /// undo location stays put while the most-used "spawn a tab"
+    /// affordance is one tap from the right edge.
     @ViewBuilder
     private var trailingControls: some View {
         HStack(spacing: Self.buttonSpacing) {
             bareButton(symbol: "arrow.uturn.backward", help: "Undo") {
                 CommandActions.undo()
+            }
+            bareButton(symbol: "plus.square", help: "New Tab") {
+                CommandActions.newTab()
             }
             bareButton(symbol: "command.square", help: "Command Palette") {
                 CommandActions.presentCommandPalette()
