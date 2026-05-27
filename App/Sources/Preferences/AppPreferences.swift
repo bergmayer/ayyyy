@@ -107,7 +107,6 @@ enum AppPreferenceKey {
     static let sessionRecords = "sessionRecords"
     static let canonizePairs = "canonizePairs"
     static let canonizeRegex = "canonizeRegex"
-    static let notebookNotes = "notebookNotes"
 
     // MARK: Live match highlighting
     /// When `true`, every occurrence of the current selection (≥2 chars,
