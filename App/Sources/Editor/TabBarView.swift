@@ -80,11 +80,7 @@ struct TabBarView: View {
             isCloseable: true,
             onSelect: { session.selectedTabID = tab.id },
             onClose:  { CommandActions.requestCloseTab(tab.id, in: session) },
-            onPin:    { session.togglePinned(tab.id) },
-            onCloseOthers: { CommandActions.requestCloseOtherTabs(except: tab.id, in: session) },
-            onCloseRight:  { CommandActions.requestCloseTabsToRight(of: tab.id, in: session) },
-            onCloseAll:    { CommandActions.requestCloseAllTabs(in: session) },
-            onOpenNewTab:  { CommandActions.newTab() }
+            onPin:    { session.togglePinned(tab.id) }
         )
         .id(tab.id)
         .draggable(tab.id.uuidString) {
@@ -167,6 +163,45 @@ struct TabBarView: View {
         .buttonStyle(.borderless)
         .help("Show All Tabs")
         .accessibilityLabel("Show All Tabs")
+        // Tap-and-hold (or long-press on iPad / right-click on Mac
+        // Catalyst) gates the multi-tab management actions here so
+        // they live in one place instead of repeating on every pill.
+        .contextMenu { showAllTabsContextMenu }
+    }
+
+    @ViewBuilder
+    private var showAllTabsContextMenu: some View {
+        Button {
+            AppStateBus.shared.scenes.claimFocus(session: session)
+            CommandActions.newTab()
+        } label: {
+            Label("Open New Tab", systemImage: "plus.square")
+        }
+        Divider()
+        Button(role: .destructive) {
+            AppStateBus.shared.scenes.claimFocus(session: session)
+            CommandActions.requestCloseTab(session.selectedTabID, in: session)
+        } label: {
+            Label("Close This Tab", systemImage: "xmark")
+        }
+        Button(role: .destructive) {
+            AppStateBus.shared.scenes.claimFocus(session: session)
+            CommandActions.requestCloseOtherTabs(except: session.selectedTabID, in: session)
+        } label: {
+            Label("Close Other Tabs", systemImage: "rectangle.stack.badge.minus")
+        }
+        Button(role: .destructive) {
+            AppStateBus.shared.scenes.claimFocus(session: session)
+            CommandActions.requestCloseTabsToRight(of: session.selectedTabID, in: session)
+        } label: {
+            Label("Close Tabs to the Right", systemImage: "rectangle.righthalf.inset.filled.arrow.right")
+        }
+        Button(role: .destructive) {
+            AppStateBus.shared.scenes.claimFocus(session: session)
+            CommandActions.requestCloseAllTabs(in: session)
+        } label: {
+            Label("Close All Tabs", systemImage: "xmark.square.fill")
+        }
     }
 
     private func tabLabel(_ tab: TabModel) -> String {
@@ -197,10 +232,6 @@ private struct TabPillView: View {
     let onSelect: () -> Void
     let onClose: () -> Void
     let onPin: () -> Void
-    let onCloseOthers: () -> Void
-    let onCloseRight: () -> Void
-    let onCloseAll: () -> Void
-    let onOpenNewTab: () -> Void
 
     var body: some View {
         pillContent
@@ -291,9 +322,6 @@ private struct TabPillView: View {
 
     @ViewBuilder
     private var contextMenu: some View {
-        Button(action: onOpenNewTab) {
-            Label("Open New Tab", systemImage: "plus.square")
-        }
         Button {
             onPin()
         } label: {
@@ -310,15 +338,6 @@ private struct TabPillView: View {
         Divider()
         Button(role: .destructive, action: onClose) {
             Label("Close This Tab", systemImage: "xmark")
-        }
-        Button(role: .destructive, action: onCloseOthers) {
-            Label("Close Other Tabs", systemImage: "rectangle.stack.badge.minus")
-        }
-        Button(role: .destructive, action: onCloseRight) {
-            Label("Close Tabs to the Right", systemImage: "rectangle.righthalf.inset.filled.arrow.right")
-        }
-        Button(role: .destructive, action: onCloseAll) {
-            Label("Close All Tabs", systemImage: "xmark.square.fill")
         }
     }
 

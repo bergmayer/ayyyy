@@ -328,40 +328,56 @@ struct EditorScene: View {
         }
     }
 
-    /// File-browser tabs get the inline picker; its pick handler
-    /// transforms the tab back to editor mode in place. Launcher
-    /// tabs show templates + unsaved drafts and likewise flip back
-    /// to editor mode once the user picks a seed.
+    /// Every tab kind funnels through `EditorView` so the window
+    /// keeps its toolbar, status bar, and keyboard accessory regardless
+    /// of what's filling the editor's text-area region. `.launcher`
+    /// and `.fileBrowser` inject their UI via `tabContentOverride`;
+    /// `.editor` lets EditorView render its text view normally.
     @ViewBuilder
     private var activeTabContent: some View {
         switch session.activeTab.kind {
         case .editor:
             EditorView(document: document, state: state)
         case .fileBrowser:
-            FileBrowserTabContent(onPick: { url in
-                adoptPickedFileIntoActiveTab(url)
-            })
+            EditorView(
+                document: document,
+                state: state,
+                tabContentOverride: AnyView(
+                    FileBrowserTabContent(onPick: { url in
+                        adoptPickedFileIntoActiveTab(url)
+                    })
+                )
+            )
         case .launcher:
-            NewDocumentLauncherView(
-                onPickTemplate: { template in
-                    adoptTemplateIntoActiveTab(template)
-                },
-                onPickDraft: { draft in
-                    adoptDraftIntoActiveTab(draft)
-                },
-                onPickOpenFile: {
-                    session.activeTab.kind = .fileBrowser
-                },
-                onCancel: {
-                    // Same path as ⌘W on a launcher tab — closeTab
-                    // either pops the launcher and reveals a sibling
-                    // editor tab, or (if this is the only tab) spins
-                    // up a fresh launcher in its place. Either way
-                    // the window stays open.
-                    CommandActions.requestCloseTab(session.activeTab.id, in: session)
-                }
+            EditorView(
+                document: document,
+                state: state,
+                tabContentOverride: AnyView(launcherOverride)
             )
         }
+    }
+
+    @ViewBuilder
+    private var launcherOverride: some View {
+        NewDocumentLauncherView(
+            onPickTemplate: { template in
+                adoptTemplateIntoActiveTab(template)
+            },
+            onPickDraft: { draft in
+                adoptDraftIntoActiveTab(draft)
+            },
+            onPickOpenFile: {
+                session.activeTab.kind = .fileBrowser
+            },
+            onCancel: {
+                // Same path as ⌘W on a launcher tab — closeTab
+                // either pops the launcher and reveals a sibling
+                // editor tab, or (if this is the only tab) spins
+                // up a fresh launcher in its place. Either way
+                // the window stays open.
+                CommandActions.requestCloseTab(session.activeTab.id, in: session)
+            }
+        )
     }
 
     /// Loads the URL into the active tab's existing document — same

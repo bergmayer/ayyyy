@@ -7,6 +7,19 @@ struct EditorView: View {
 
     let document: PlainTextDocument
     let state: EditorState
+    /// When non-nil, this view replaces `splitOrSingleEditor` in the
+    /// editor's content area. The launcher and the inline file
+    /// browser pass their own surfaces through here so the window
+    /// keeps its toolbar, status bar, and keyboard accessory — the
+    /// alternate UI shows up *inside* the text-view region rather
+    /// than taking over the entire tab.
+    let tabContentOverride: AnyView?
+
+    init(document: PlainTextDocument, state: EditorState, tabContentOverride: AnyView? = nil) {
+        self.document = document
+        self.state = state
+        self.tabContentOverride = tabContentOverride
+    }
 
     @Bindable private var bus = AppStateBus.shared
     @Environment(\.openWindow) private var openWindow
@@ -41,8 +54,14 @@ struct EditorView: View {
         // editor on iPad portrait.
         return ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                splitOrSingleEditor
-                    .frame(maxHeight: .infinity)
+                Group {
+                    if let override = tabContentOverride {
+                        override
+                    } else {
+                        splitOrSingleEditor
+                    }
+                }
+                .frame(maxHeight: .infinity)
             }
             .ignoresSafeArea(.keyboard, edges: .bottom)
 

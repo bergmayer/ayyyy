@@ -107,8 +107,8 @@ struct TabSwitcherView: View {
             onSelect: { activate(tab) },
             onClose:  { CommandActions.requestCloseTab(tab.id, in: session) },
             onPin:    { session.togglePinned(tab.id) },
-            onCloseOthers: { session.closeOtherTabs(except: tab.id) },
-            onCloseRight:  { session.closeTabsToRight(of: tab.id) }
+            onCloseOthers: { CommandActions.requestCloseOtherTabs(except: tab.id, in: session) },
+            onCloseRight:  { CommandActions.requestCloseTabsToRight(of: tab.id, in: session) }
         )
     }
 
