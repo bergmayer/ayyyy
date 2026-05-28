@@ -588,6 +588,12 @@ struct EditorScene: View {
     /// it via `AppStateBus.shared.scenes.hasAppliedLaunchBehavior`.
     private func markColdLaunchHandled() {
         AppStateBus.shared.scenes.hasAppliedLaunchBehavior = true
+        // Sweep orphaned scene sessions (the "N hidden windows"
+        // iPadOS retains after a Stage Manager / App Switcher
+        // close). Drafts from those windows are already on disk
+        // and reachable from the launcher's Drafts section, so the
+        // shadow sessions are pure clutter.
+        SessionsStore.shared.purgeHiddenSessions()
     }
 
     /// One-shot per scene. The first scene to call this seeds the

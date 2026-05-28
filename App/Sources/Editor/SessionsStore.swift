@@ -72,10 +72,25 @@ final class SessionsStore {
         ) { [weak self] note in
             guard let scene = note.object as? UIScene else { return }
             let key = ObjectIdentifier(scene)
+            let session = scene.session
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                guard let sceneUUID = self.sceneUUIDsByObjectIdentifier.removeValue(forKey: key) else { return }
-                self.remove(forScene: sceneUUID)
+                if let sceneUUID = self.sceneUUIDsByObjectIdentifier.removeValue(forKey: key) {
+                    self.remove(forScene: sceneUUID)
+                }
+                // Tell iPadOS to fully discard the session, not just
+                // disconnect it. Without this, every closed window
+                // accumulates in `UIApplication.shared.openSessions`
+                // and shows up in iPadOS's "N hidden windows" toast
+                // on next launch. Drafts were already flushed by
+                // `scenePhase` → `.background` and `.onDisappear`,
+                // so there's no data loss — the launcher's Drafts
+                // section is our recently-closed UI.
+                UIApplication.shared.requestSceneSessionDestruction(
+                    session,
+                    options: nil,
+                    errorHandler: nil
+                )
             }
         }
     }
@@ -86,6 +101,33 @@ final class SessionsStore {
     /// Idempotent — repeat calls with the same arguments are no-ops.
     func register(_ scene: UIScene, sceneUUID: String) {
         sceneUUIDsByObjectIdentifier[ObjectIdentifier(scene)] = sceneUUID
+    }
+
+    /// One-shot cleanup of orphaned `UISceneSession`s — the ones
+    /// iPadOS keeps after a user dismisses a window via Stage
+    /// Manager / App Switcher and that show up as "N hidden
+    /// windows" on next launch. By the time this fires (cold-launch
+    /// first scene `.active`), the system has already decided which
+    /// sessions to reconnect; any session in `openSessions` whose
+    /// `scene` is nil is genuinely orphaned. Drafts are already
+    /// safe on disk from the prior `.background` / `.onDisappear`
+    /// flush, so the launcher's Drafts section is the recovery
+    /// surface. Guarded by `hasPurgedHiddenSessions` so it runs
+    /// once per launch.
+    private var hasPurgedHiddenSessions = false
+    func purgeHiddenSessions() {
+        guard !hasPurgedHiddenSessions else { return }
+        hasPurgedHiddenSessions = true
+        let app = UIApplication.shared
+        let liveScenes = Set(app.connectedScenes.map { ObjectIdentifier($0) })
+        for session in app.openSessions {
+            // A session whose scene is in `connectedScenes` is the
+            // window the user just opened — leave it alone.
+            if let scene = session.scene, liveScenes.contains(ObjectIdentifier(scene)) {
+                continue
+            }
+            app.requestSceneSessionDestruction(session, options: nil, errorHandler: nil)
+        }
     }
 
     /// First scene to call this seeds `pendingRestores` from the
