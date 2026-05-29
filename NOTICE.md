@@ -1,22 +1,28 @@
 # Third-Party Notices
 
-This project vendors source code from two upstream projects.
+Ayyyy is licensed under the Apache License, Version 2.0 (see `LICENSE`).
+It vendors source code from the following upstream projects.
 
 ## CotEditor (Apache License 2.0)
 
 - Upstream: https://github.com/coteditor/CotEditor
-- Vendored: `Packages/EditorCore` (originally `CotEditor/Packages/EditorCore`)
+- Vendored: `Packages/EditorKit/Sources` (originally `CotEditor/Packages/EditorCore`)
 - Copyright © 2005-2009 nakamuxu, © 2011, 2014 usami-k, © 2013-2026 1024jp
-
-The vendored copy may diverge from upstream. Modifications made in this
-repository are noted in commit history.
-
-See `Packages/EditorCore/` for the original LICENSE/headers preserved from upstream.
+- License: `Packages/EditorKit/LICENSE-EditorCore`
 
 ## Runestone (MIT License)
 
 - Upstream: https://github.com/simonbs/Runestone
-- Vendored: `Packages/Runestone`
+- Vendored: `Packages/EditorKit/Sources`
 - Copyright © 2021 Simon Støvring
+- License: `Packages/EditorKit/LICENSE-Runestone`
 
-See `Packages/Runestone/LICENSE` for the full text.
+## tree-sitter-typst (MIT License)
+
+- Upstream: https://github.com/uben0/tree-sitter-typst
+- Vendored: `Packages/TreeSitterTypst`
+- Copyright © 2023 Gerbais-Nief Eddie
+- License: `Packages/TreeSitterTypst/LICENSE`
+
+The vendored copies may diverge from upstream. Modifications made in this
+repository are noted in commit history.
