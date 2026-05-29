@@ -2,10 +2,6 @@ import SwiftUI
 import FileEncoding
 import LineEnding
 
-/// Typed category buckets — kills the stringly-typed `category:`
-/// argument that used to live on `EditorCommandSpec`. A typo at a
-/// call site is now a compile error, and `MenuGroup.from(category:)`
-/// switches exhaustively instead of falling into a default.
 enum CommandCategory: String {
     case app          = "App"
     case bookmark     = "Bookmark"
@@ -32,30 +28,19 @@ enum CommandCategory: String {
     case view         = "View"
 }
 
-/// A single invokable command, used by the command palette.
-///
-/// The fuzzy matcher scores the user's query against the `title` plus
-/// any `synonyms` and the `description` — so typing "rename file" or
-/// "save copy" can both find "Save As…" even though the literal title
-/// doesn't contain those words.
+/// Title + synonyms + description all feed the fuzzy matcher; the
+/// title wins ties since it's weighted slightly higher.
 struct EditorCommandSpec: Identifiable {
     let id: String
     let title: String
     let category: CommandCategory
     let shortcutHint: String?
-    /// Alternate phrasings the user might type. Searched with the same
-    /// fuzzy matcher as `title`, just weighted slightly lower so the
-    /// literal title wins ties.
     let synonyms: [String]
-    /// Longer human description shown nowhere but searched. Use sparingly
-    /// — every entry slows the per-command scoring pass.
     let description: String?
     let action: @MainActor () -> Void
     let isEnabled: @MainActor () -> Bool
 
-    // Pre-lowercased character arrays for `FuzzyMatcher`. Built once
-    // at registry construction so palette typing doesn't allocate an
-    // Array<Character> per command per keystroke.
+    // Pre-lowercased so palette typing doesn't allocate per keystroke.
     let titleChars: [Character]
     let synonymChars: [[Character]]
     let categoryChars: [Character]
@@ -86,15 +71,14 @@ struct EditorCommandSpec: Identifiable {
     }
 }
 
-/// The full list of palette-addressable commands. Built dynamically so it
-/// includes per-language and per-encoding entries.
+/// Built dynamically so per-language / per-encoding entries are
+/// included alongside the static commands.
 @MainActor
 enum CommandRegistry {
 
     static func all() -> [EditorCommandSpec] {
         var commands: [EditorCommandSpec] = []
 
-        // iPad-only commands first (gated by device idiom).
         if DeviceIdiom.supportsMultipleWindows {
             commands.append(
                 .init(id: "newWindow", title: "New Window", category: .file, shortcutHint: "⌘N",
@@ -107,7 +91,6 @@ enum CommandRegistry {
         // MARK: File / Window
 
         commands += [
-            // New Window is iPad-only; iPhone hosts one scene by OS design.
             .init(id: "newTab",     title: "New Tab",                        category: .file, shortcutHint: "⌘T",   synonyms: ["spawn tab", "open empty tab"],     action: CommandActions.newTab,                isEnabled: { true }),
             .init(id: "showTabs",   title: "Show All Tabs",                  category: .file, shortcutHint: "⇧⌘\\", synonyms: ["tab switcher", "tab overview", "expose tabs", "all tabs"], action: CommandActions.showTabSwitcher, isEnabled: { true }),
             .init(id: "reopenTab",  title: "Reopen Last Closed Tab",         category: .file, shortcutHint: "⇧⌘T",  synonyms: ["restore tab", "undo close tab", "recently closed"], action: CommandActions.reopenLastClosedTab, isEnabled: { true }),
@@ -283,9 +266,6 @@ enum CommandRegistry {
                   isEnabled: { true })
         ]
 
-        // Per-slot snippet entries so the palette surfaces "Snippet
-        // 3: Email Signature" alongside everything else. Slots are
-        // built lazily from the live store so renames propagate.
         for slot in SnippetsStore.shared.slots {
             let id = slot.id
             commands.append(.init(
@@ -349,9 +329,7 @@ enum CommandRegistry {
                   action: CommandActions.markdownFootnote)
         ]
 
-        // MARK: Surround Selection presets — one palette entry per
-        // wrap so a user typing "wrap" / "surround" / "parens" /
-        // "bold" finds the right command without navigating the menu.
+        // MARK: Surround Selection presets
 
         commands += [
             .init(id: "srBold",   title: "Surround with Bold **…**",      category: .text,
@@ -383,8 +361,7 @@ enum CommandRegistry {
                   action: { CommandActions.surroundSelection(prefix: "`",  suffix: "`") })
         ]
 
-        // MARK: Remaining miscellaneous menu items missing from the
-        // palette before this audit.
+        // MARK: Miscellaneous
 
         commands += [
             .init(id: "joinLines",   title: "Join Lines",            category: .edit,
@@ -531,9 +508,8 @@ enum CommandRegistry {
 
         // MARK: Bookmarks
         //
-        // Sunk to the end of the registry so the palette's empty-query
-        // list doesn't lead with 20 numbered entries. Fuzzy search still
-        // surfaces them when the user types "bookmark" / "bk".
+        // Sunk to the end so the palette's empty-query list isn't
+        // led by 20 numbered entries.
 
         for slot in 0..<10 {
             commands.append(.init(id: "bkSet.\(slot)",   title: "Set Bookmark \(slot)",     category: .bookmark, shortcutHint: "⇧⌘\(slot)", action: { CommandActions.setBookmark(slot) }))

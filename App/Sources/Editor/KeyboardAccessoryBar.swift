@@ -2,23 +2,11 @@ import UIKit
 import EditorEngine
 import GameController
 
-/// Keyboard accessory for the iOS soft keyboard.
-///
-///   * **iPhone (soft keyboard)** — custom `EditorAccessoryView` set
-///     as `inputAccessoryView` on the text view. The accessory
-///     pins above the keyboard via the system's accessory plumbing;
-///     fine on iPhone because it's single-window.
-///   * **iPad (soft keyboard)** — buttons live in the keyboard's
-///     own QuickType strip via `inputAssistantItem`. The same set
-///     as iPhone (esc, ⌃/⌥/⌘ sticky modifiers, line/document
-///     caret jumps), minus the dismiss-keyboard button since iPad's
-///     keyboard already has one built-in. An `inputAccessoryView`
-///     on iPad would attach to the specific window and bleed over
-///     the per-window status bar in Stage Manager / Slide Over —
-///     keyboard-attached is the correct anchor.
-///   * **Hardware keyboard attached** — both surfaces cleared,
-///     observed via `GameController` so the bar reappears the
-///     moment the user unplugs.
+/// iPhone uses a per-textView `inputAccessoryView`; iPad uses the
+/// keyboard's own QuickType strip via `inputAssistantItem` (an
+/// `inputAccessoryView` on iPad bleeds across windows in Stage
+/// Manager). Hardware-keyboard attach clears both, observed via
+/// `GameController`.
 @MainActor
 enum KeyboardAccessoryBar {
 
@@ -40,8 +28,6 @@ enum KeyboardAccessoryBar {
         }
 
         if DeviceIdiom.isPhone {
-            // iPhone path: custom inputAccessoryView. Suppress the
-            // system QuickType strip so ours is the only thing showing.
             if !(textView.inputAccessoryView is EditorAccessoryView) {
                 textView.inputAccessoryView = EditorAccessoryView(host: textView)
             }
@@ -49,10 +35,6 @@ enum KeyboardAccessoryBar {
             assistant.trailingBarButtonGroups = []
             detachIPadObserver(from: textView)
         } else {
-            // iPad path: keyboard-attached QuickType bar. Clear any
-            // per-window accessory left over from a prior install.
-            // Two groups so modifiers cluster on the right with their
-            // own fixed-space padding, separate from the utilities.
             textView.inputAccessoryView = nil
             let observer = IPadAccessoryObserver(host: textView)
             assistant.leadingBarButtonGroups = [
@@ -88,26 +70,19 @@ private func detachIPadObserver(from textView: EditorEngine.TextView) {
     objc_setAssociatedObject(textView, &ipadObserverKey, nil, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 }
 
-/// Owns the iPad QuickType-bar items and the timer that mirrors
-/// `EditorState.armedAccessory*` flags onto the modifier items'
-/// tint. Retained via objc associated object on the text view so
-/// it lives exactly as long as the text view does.
+/// Retained on the text view via objc-associated object; tint
+/// mirroring runs on a 100ms polling timer.
 @MainActor
 private final class IPadAccessoryObserver {
 
     weak var host: EditorEngine.TextView?
-    /// Anchored to the left edge of the QuickType bar — esc + the
-    /// line/document caret jumps. The "utilities" cluster.
     let leadingItems: [UIBarButtonItem]
-    /// Anchored to the right edge — the sticky modifier keys, with
-    /// fixed-space padding between them so they read as a distinct
-    /// group rather than a flush row of glyphs.
     let trailingItems: [UIBarButtonItem]
     private weak var controlItem: UIBarButtonItem?
     private weak var optionItem: UIBarButtonItem?
     private weak var commandItem: UIBarButtonItem?
-    /// `nonisolated(unsafe)` because the nonisolated deinit needs to
-    /// release the timer; Timer isn't Sendable, but we only mutate
+    /// `nonisolated(unsafe)` so the nonisolated deinit can release
+    /// the timer. Timer isn't Sendable but we mutate only on main.
     /// it from the main actor (init / DispatchQueue.main from deinit).
     nonisolated(unsafe) private var timer: Timer?
 
@@ -141,11 +116,8 @@ private final class IPadAccessoryObserver {
             CaretMover.moveToDocumentEnd(in: host)
         }
 
-        // No chevron-down on iPad — the system keyboard's own
-        // dismiss-keyboard key (bottom-right of the soft keyboard)
-        // covers that. Modifier cluster goes in the trailing group
-        // with extra spacing between glyphs so the user can target
-        // them without squinting.
+        // iPad keyboard ships its own dismiss key (bottom-right);
+        // no chevron-down needed here.
         self.leadingItems = [escape, lineStart, lineEnd, docStart, docEnd]
         let spaceWidth: CGFloat = 18
         let s1 = UIBarButtonItem(systemItem: .fixedSpace); s1.width = spaceWidth
@@ -156,9 +128,8 @@ private final class IPadAccessoryObserver {
         self.commandItem = command
 
         refreshModifierVisuals()
-        // Same 100 ms polling cadence as the iPhone EditorAccessoryView:
-        // catches the engine clearing the armed flag after consuming a
-        // key without us needing an observation channel.
+        // Polls the engine for armed-flag clears; observation
+        // channel doesn't exist for the engine's consume step.
         let t = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.refreshModifierVisuals() }
         }
@@ -167,9 +138,7 @@ private final class IPadAccessoryObserver {
     }
 
     deinit {
-        // Timer must be invalidated on the thread that scheduled it
-        // (main). The hop also keeps the nonisolated deinit happy
-        // about touching the Timer reference.
+        // Timer must invalidate on the thread that scheduled it.
         let captured = timer
         DispatchQueue.main.async { captured?.invalidate() }
     }
@@ -227,8 +196,6 @@ private final class IPadAccessoryObserver {
     }
 }
 
-/// Holds the GameController notification tokens; released alongside
-/// the text view it's bound to via objc associated objects.
 private final class KeyboardObserverHolder: @unchecked Sendable {
     var tokens: [NSObjectProtocol] = []
 
@@ -326,9 +293,7 @@ enum CaretMover {
         }
     }
 
-    /// Word-boundary nav: moves the cursor over whitespace then over
-    /// the next word, in the requested direction. Matches the macOS
-    /// ⌥← / ⌥→ convention.
+    /// Skips whitespace then the next word, matching ⌥← / ⌥→.
     static func moveWord(in textView: EditorEngine.TextView?, forward: Bool) {
         guard let textView else { return }
         let nsText = textView.text as NSString
@@ -357,14 +322,10 @@ enum CaretMover {
 @MainActor
 enum AccessoryKeyboard {
 
-    /// Called from the engine's `shouldChangeTextIn` when one of the
-    /// accessory bar's sticky modifiers is armed. Returns `true`
-    /// when the action consumed the keypress (engine should NOT
-    /// insert the character), `false` to pass through.
-    ///
-    /// Priority is ⌘ → ⌃ → ⌥. The "shifted" form of a Command
-    /// shortcut (e.g. ⌘⇧S) is detected by the iOS keyboard
-    /// delivering an uppercase letter — no separate accessory key.
+    /// Called from `shouldChangeTextIn` when a sticky modifier is
+    /// armed. Returns `true` when the action consumed the keypress.
+    /// Priority ⌘ → ⌃ → ⌥; shifted ⌘ shortcuts (⌘⇧S) detected via
+    /// the uppercase letter the keyboard delivers.
     static func handleArmedKey(_ text: String, state: EditorState) -> Bool {
         guard state.textView != nil else { return false }
         let lower = text.lowercased()
