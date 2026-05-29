@@ -17,7 +17,7 @@ extension CommandActions {
         else { return }
         Self.context.pending.adoptedTab = tab
         Self.context.scenes.requestOpenWindow(.editor)
-        Self.context.scenes.openWindowAction?(.editor)
+        Self.context.scenes.openWindow?(.editor)
     }
 
     // MARK: - Close / confirm
@@ -538,7 +538,7 @@ extension CommandActions {
     static func reopenClosedTab(_ record: ClosedTabRecord) {
         guard let session = Self.session else { return }
         if let url = record.fileURL {
-            Self.context.scenes.routeOpenURL?(url)
+            Self.routeOpenURL(url)
             return
         }
         let tab = session.newTab(kind: .editor)

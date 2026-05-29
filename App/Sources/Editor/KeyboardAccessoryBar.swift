@@ -393,7 +393,7 @@ enum AccessoryKeyboard {
             if shifted {
                 AppStateBus.shared.pickers.pending = .saveAs
             } else {
-                AppStateBus.shared.editing.saveCurrentDocument?()
+                CommandActions.saveFile()
             }
             return true
         case "z":

@@ -22,7 +22,7 @@ struct FileBrowserScene: View {
                 // iPadOS doesn't relaunch the app into the file
                 // browser after the user quit while it was open.
                 if !AppStateBus.shared.scenes.consumeOpen(.fileBrowser) {
-                    AppStateBus.shared.scenes.openWindowAction?(.editor)
+                    AppStateBus.shared.scenes.openWindow?(.editor)
                     dismissWindow(id: SceneID.fileBrowser.rawValue)
                 }
             }
@@ -194,19 +194,9 @@ struct FileBrowserRepresentable: UIViewControllerRepresentable {
             }
         }
 
-        /// Route the picked URL into a new editor window (or tab, per
-        /// the user's `DocumentDestination` preference). `routeOpenURL`
-        /// is installed by every `EditorScene.onAppear` and re-installed
-        /// on `.active`, so it's almost always live; the fallback
-        /// covers cold-launch races where no editor is mounted yet.
         @MainActor
         private static func route(_ url: URL) {
-            if let route = AppStateBus.shared.scenes.routeOpenURL {
-                route(url)
-            } else {
-                AppStateBus.shared.pending.newWindow = url
-                AppStateBus.shared.scenes.openWindowAction?(.editor)
-            }
+            CommandActions.routeOpenURL(url)
         }
     }
 }

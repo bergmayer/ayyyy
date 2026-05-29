@@ -99,7 +99,7 @@ struct MultiFileSearchSheet: View {
                     // Same dismiss-on-restore guard the palette uses
                     // so iPadOS doesn't relaunch into this window.
                     if !AppStateBus.shared.scenes.consumeOpen(.multiFileSearch) {
-                        AppStateBus.shared.scenes.openWindowAction?(.editor)
+                        AppStateBus.shared.scenes.openWindow?(.editor)
                         close()
                         return
                     }
@@ -379,7 +379,7 @@ struct MultiFileSearchSheet: View {
         guard let url = match.url else { return }
         bus.pending.goToLine = match.line
         bus.pending.newWindow = url
-        bus.scenes.openWindowAction?(.editor)
+        bus.scenes.openWindow?(.editor)
     }
 
     /// Wraps in both directions.

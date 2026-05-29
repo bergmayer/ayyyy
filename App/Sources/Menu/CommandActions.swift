@@ -4,28 +4,17 @@ import FileEncoding
 import LineEnding
 import LineSort
 
-/// Menu and palette actions. Both surfaces resolve the current editor
-/// through `Self.context.scenes.currentEditor`.
 @MainActor
 enum CommandActions {
-
-    // MARK: - Sheets
 
     static func presentSheet(_ sheet: EditorSheet) {
         Self.context.editing.presentedSheet = sheet
     }
 
-    // MARK: - Window / file commands
-
-    /// Spawn a new editor scene. The fresh window picks the user's
-    /// default launch behaviour.
     static func newWindow() {
-        Self.context.scenes.openWindowAction?(.editor)
+        Self.context.scenes.openWindow?(.editor)
     }
 
-    /// New tabs land on the launcher (templates + drafts), so the
-    /// old "offer drafts banner" plumbing is gone — the launcher
-    /// itself surfaces the same list inline.
     static func newTab() {
         Self.context.scenes.currentSession?.newTab()
     }
@@ -35,7 +24,8 @@ enum CommandActions {
     }
 
     static func saveFile() {
-        Self.context.editing.saveCurrentDocument?()
+        guard let session = Self.context.scenes.currentSession else { return }
+        saveDocumentSafely(session.activeTab, session: session)
     }
 
     static func saveFileAs() {
@@ -50,7 +40,7 @@ enum CommandActions {
         if DeviceIdiom.isPhone {
             Self.context.editing.presentedSheet = .preferences
         } else {
-            Self.context.scenes.openWindowAction?(.preferences)
+            Self.context.scenes.openWindow?(.preferences)
         }
     }
 
@@ -60,14 +50,42 @@ enum CommandActions {
 
     /// Window destination: one fresh browser scene per pick. Tab
     /// destination: sheet on the active editor — picks add tabs to
-    /// the same session ("everything in this window").
+    /// the same session.
     static func presentFileBrowser() {
         switch DocumentDestination.current() {
         case .window:
             Self.context.scenes.requestOpenWindow(.fileBrowser)
-            Self.context.scenes.openWindowAction?(.fileBrowser)
+            Self.context.scenes.openWindow?(.fileBrowser)
         case .tab:
             Self.context.editing.presentedSheet = .fileBrowser
+        }
+    }
+
+    /// Replaces the old `SceneRouter.routeOpenURL` closure. Caller is
+    /// any URL-producing surface (FileBrowser, DocumentPicker) that
+    /// has no scene of its own — resolves the active session here
+    /// and dispatches per `DocumentDestination`.
+    static func routeOpenURL(_ url: URL) {
+        let destination = DocumentDestination.current()
+        Self.context.pending.nextOpenDestinationOverride = nil
+        switch destination {
+        case .window:
+            Self.context.pending.newWindow = url
+            Self.context.scenes.openWindow?(.editor)
+        case .tab:
+            guard let session = Self.context.scenes.currentSession else {
+                Self.context.pending.newWindow = url
+                Self.context.scenes.openWindow?(.editor)
+                return
+            }
+            session.newTab(kind: .editor)
+            session.activeTab.document.fileURL = url
+            Task { @MainActor in
+                try? await session.activeTab.document.loadAsync(from: url)
+                session.activeTab.state.text = session.activeTab.document.text
+                session.activeTab.state.fileURL = url
+                session.activeTab.state.languageIdentifier = LanguageRegistry.identifier(for: url)
+            }
         }
     }
 
@@ -119,13 +137,12 @@ enum CommandActions {
 
     // MARK: - Same-file new window (split-view surrogate)
 
-    /// iPad-native side-by-side: same URL, two scenes. A true split
-    /// would need engine-side shared text storage. Untitled buffers
-    /// are no-ops — no URL to reload from.
+    /// iPad-native side-by-side: same URL, two scenes. Untitled
+    /// buffers no-op — no URL to reload from.
     static func openCurrentDocumentInNewWindow() {
         guard let url = Self.context.scenes.currentEditor?.fileURL else { return }
         Self.context.pending.newWindow = url
-        Self.context.scenes.openWindowAction?(.editor)
+        Self.context.scenes.openWindow?(.editor)
     }
 
     // MARK: - Sidebar

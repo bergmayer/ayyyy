@@ -17,6 +17,7 @@ struct AyyyyApp: App {
     var body: some Scene {
         WindowGroup("Editor", id: SceneID.editor.rawValue) {
             EditorScene()
+                .background(WindowOpenerInstaller())
         }
         .commands {
             EditorCommands()
@@ -45,7 +46,7 @@ struct AyyyyApp: App {
         // documents. UIDocumentBrowserViewController hosted in a
         // real window (not a modal sheet). The window stays open so
         // the user can pick file after file; each pick spawns a
-        // new editor window via `routeOpenURL`.
+        // new editor window via `CommandActions.routeOpenURL`.
         WindowGroup("File Browser", id: SceneID.fileBrowser.rawValue) {
             FileBrowserScene()
         }
@@ -63,10 +64,26 @@ struct AyyyyApp: App {
     }
 }
 
-/// UIKit bridge for Home-Screen quick actions. The SwiftUI app sets this
-/// as its `UIApplicationDelegateAdaptor` so the system can call its
-/// shortcut callbacks. Lives in the same file as `AyyyyApp` to avoid
-/// adding a new file to the pbxproj.
+/// Installed once at the editor `WindowGroup` so non-View callers
+/// can spawn named scenes. SwiftUI's `openWindow` action only
+/// lives inside a View body; storing it as a process-lifetime
+/// closure on `SceneRouter` is the cleanest bridge.
+private struct WindowOpenerInstaller: View {
+
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .onAppear {
+                guard AppStateBus.shared.scenes.openWindow == nil else { return }
+                AppStateBus.shared.scenes.openWindow = { id in
+                    openWindow(id: id.rawValue)
+                }
+            }
+    }
+}
+
 @MainActor
 final class AppDelegateBridge: NSObject, UIApplicationDelegate {
 

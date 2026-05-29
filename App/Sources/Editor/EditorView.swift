@@ -165,7 +165,6 @@ struct EditorView: View {
         .onAppear {
             primeStateFromDocument()
             AppStateBus.shared.scenes.currentEditor = state
-            AppStateBus.shared.scenes.openWindowAction = { id in openWindow(id: id.rawValue) }
             if let session = AppStateBus.shared.scenes.currentSession {
                 AppStateBus.shared.scenes.registerSession(session)
             }

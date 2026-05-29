@@ -11,9 +11,6 @@ final class DocumentPickerBridge: NSObject {
 
     private var openDelegate: OpenDelegate?
 
-    /// Present the system Open picker. On success, routes the URL via
-    /// `AppStateBus.routeOpenURL` so the file lands in a fresh window
-    /// or tab per the user's `DocumentDestination` preference.
     func presentOpenPicker() {
         guard let presenter = topPresentingController() else { return }
         let picker = UIDocumentPickerViewController(
@@ -22,14 +19,7 @@ final class DocumentPickerBridge: NSObject {
         )
         let delegate = OpenDelegate { [weak self] url in
             self?.openDelegate = nil
-            if let route = AppStateBus.shared.scenes.routeOpenURL {
-                route(url)
-            } else {
-                // Cold-launch fallback: no editor scene has installed
-                // the router yet. Spawn one with the URL queued.
-                AppStateBus.shared.pending.newWindow = url
-                AppStateBus.shared.scenes.openWindowAction?(.editor)
-            }
+            CommandActions.routeOpenURL(url)
         } onCancel: { [weak self] in
             self?.openDelegate = nil
         }

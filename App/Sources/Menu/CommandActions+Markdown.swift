@@ -92,7 +92,7 @@ extension CommandActions {
     static func presentMarkdownPreview() {
         if DeviceIdiom.supportsMultipleWindows {
             Self.context.scenes.requestOpenWindow(.markdownPreview)
-            Self.context.scenes.openWindowAction?(.markdownPreview)
+            Self.context.scenes.openWindow?(.markdownPreview)
         } else {
             presentSheet(.markdownPreview)
         }

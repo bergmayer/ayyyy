@@ -40,7 +40,7 @@ extension CommandActions {
         if DeviceIdiom.isPhone {
             Self.context.editing.presentedSheet = .multiFileSearch
         } else {
-            Self.context.scenes.openWindowAction?(.multiFileSearch)
+            Self.context.scenes.openWindow?(.multiFileSearch)
         }
     }
 

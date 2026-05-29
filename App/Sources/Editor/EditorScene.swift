@@ -132,29 +132,11 @@ struct EditorScene: View {
         })
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active {
-                    // Reclaim focus pointers so menu-bar commands
-                    // target this scene, not whichever appeared last.
                     AppStateBus.shared.scenes.currentSession = session
                     AppStateBus.shared.scenes.registerSession(session)
                     AppStateBus.shared.scenes.currentEditor = session.activeTab.state
-                    AppStateBus.shared.scenes.openWindowAction = { id in openWindow(id: id.rawValue) }
-                    AppStateBus.shared.scenes.routeOpenURL = { url in route(open: url) }
-                    AppStateBus.shared.editing.saveCurrentDocument = { [weak session] in
-                        guard let session else { return }
-                        // saveDocumentSafely handles Untitled → Save As,
-                        // stale-source warnings, and the actual write.
-                        CommandActions.saveDocumentSafely(session.activeTab, session: session)
-                    }
                     return
                 }
-                // Background autosave; snapshot engine-live first
-                // since the debounce may be stale. `persistSessionRecord`
-                // re-runs the same loop, but going through it here gets
-                // drafts on disk before the OS suspends us.
-                // commitDraft: app is going to the background and
-                // could be killed by the OS, so push every dirty
-                // buffer to the synced folder for cross-device /
-                // post-launch recovery.
                 for tab in session.tabs where tab.document.isDirty {
                     if let live = tab.state.textView?.text {
                         tab.document.text = live
@@ -166,44 +148,21 @@ struct EditorScene: View {
             .onAppear {
                 AppStateBus.shared.scenes.currentSession = session
                 AppStateBus.shared.scenes.registerSession(session)
-                AppStateBus.shared.scenes.routeOpenURL = { url in route(open: url) }
-                AppStateBus.shared.editing.saveCurrentDocument = { [weak session] in
-                    guard let session else { return }
-                    CommandActions.saveDocumentSafely(session.activeTab, session: session)
-                }
                 applySessionRestoreIfNeeded()
                 markColdLaunchHandled()
                 consumePendingNewWindowURL()
                 adoptPendingTabIfAvailable()
-                // Shortcut delivered via `configurationForConnecting`
-                // (cold launch or new-scene activation) lands in
-                // `pendingShortcut` BEFORE this scene's `.onChange`
-                // subscribes — so the change is missed. Catch it
-                // here too.
                 if let pending = bus.scenes.pendingShortcut {
                     bus.scenes.pendingShortcut = nil
                     applyHomeShortcut(pending)
                 }
-                // Drafts banner gone: the launcher tab now lists
-                // unsaved drafts inline, so the old non-first-scene
-                // banner would be a duplicate. The drafts sheet
-                // stays reachable from Edit ▸ Recover Drafts….
             }
-            // Files app "Open in Ayyyy", share sheet, and the
-            // `LSSupportsOpeningDocumentsInPlace` plumbing all
-            // funnel through here.
             .onOpenURL { url in
                 sceneReceivedOpenURL = true
                 route(open: url)
             }
             .onDisappear {
                 AppStateBus.shared.scenes.deregisterSession(session)
-                // Don't clear `currentSession` here — the weak ref
-                // self-nils on dealloc, and onDisappear also fires
-                // on focus change, which would strand menu commands.
-                AppStateBus.shared.editing.saveCurrentDocument = nil
-                // Final session snapshot before any cancel/teardown so
-                // a kill mid-disappear still restores correctly.
                 persistSessionRecord()
                 // Cancel in-flight loads — otherwise closing during
                 // a slow File Provider pull keeps the Task pinned on

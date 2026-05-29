@@ -141,11 +141,9 @@ struct EditorCommands: Commands {
             // previous explicit Menu produced a duplicate entry.
         }
         CommandGroup(replacing: .saveItem) {
-            Button("Save") {
-                focused { AppStateBus.shared.editing.saveCurrentDocument?() }
-            }
-            .keyboardShortcut(AppShortcut.save)
-            .disabled(!isEnabled)
+            Button("Save", action: focused(CommandActions.saveFile))
+                .keyboardShortcut(AppShortcut.save)
+                .disabled(!isEnabled)
             Button("Save As…") {
                 focused { AppStateBus.shared.pickers.pending = .saveAs }
             }
@@ -768,14 +766,7 @@ struct EditorCommands: Commands {
         } else {
             ForEach(recents, id: \.self) { url in
                 Button(url.lastPathComponent) {
-                    // Same pipeline as File → Open so a recent file
-                    // lands in a new window, not in place.
-                    if let route = AppStateBus.shared.scenes.routeOpenURL {
-                        route(url)
-                    } else {
-                        AppStateBus.shared.pending.newWindow = url
-                        AppStateBus.shared.scenes.openWindowAction?(.editor)
-                    }
+                    CommandActions.routeOpenURL(url)
                 }
             }
             Divider()
