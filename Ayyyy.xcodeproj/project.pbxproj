@@ -24,6 +24,9 @@
 		B200000E /* EditorActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000E /* EditorActions.swift */; };
 		B200000F /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000F /* AppPreferences.swift */; };
 		B2000010 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000010 /* PreferencesView.swift */; };
+		B200006C /* EditorPreferencesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100006C /* EditorPreferencesTab.swift */; };
+		B200006D /* TypingPreferencesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100006D /* TypingPreferencesTab.swift */; };
+		B200006E /* ToolbarPreferencesTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100006E /* ToolbarPreferencesTab.swift */; };
 		B2000011 /* GoToLineSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000011 /* GoToLineSheet.swift */; };
 		B2000012 /* Transformations.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000012 /* Transformations.swift */; };
 		B2000013 /* AppStateBus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000013 /* AppStateBus.swift */; };
@@ -133,6 +136,9 @@
 		B100000E /* EditorActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorActions.swift; sourceTree = "<group>"; };
 		B100000F /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		B1000010 /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
+		B100006C /* EditorPreferencesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorPreferencesTab.swift; sourceTree = "<group>"; };
+		B100006D /* TypingPreferencesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TypingPreferencesTab.swift; sourceTree = "<group>"; };
+		B100006E /* ToolbarPreferencesTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarPreferencesTab.swift; sourceTree = "<group>"; };
 		B1000011 /* GoToLineSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GoToLineSheet.swift; sourceTree = "<group>"; };
 		B1000012 /* Transformations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Transformations.swift; sourceTree = "<group>"; };
 		B1000013 /* AppStateBus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStateBus.swift; sourceTree = "<group>"; };
@@ -421,6 +427,9 @@
 			children = (
 				B100000F /* AppPreferences.swift */,
 				B1000010 /* PreferencesView.swift */,
+				B100006C /* EditorPreferencesTab.swift */,
+				B100006D /* TypingPreferencesTab.swift */,
+				B100006E /* ToolbarPreferencesTab.swift */,
 				B1000056 /* PreferenceEnums.swift */,
 			);
 			path = Preferences;
@@ -530,6 +539,9 @@
 				B200000E /* EditorActions.swift in Sources */,
 				B200000F /* AppPreferences.swift in Sources */,
 				B2000010 /* PreferencesView.swift in Sources */,
+				B200006C /* EditorPreferencesTab.swift in Sources */,
+				B200006D /* TypingPreferencesTab.swift in Sources */,
+				B200006E /* ToolbarPreferencesTab.swift in Sources */,
 				B2000011 /* GoToLineSheet.swift in Sources */,
 				B2000012 /* Transformations.swift in Sources */,
 				B2000013 /* AppStateBus.swift in Sources */,
