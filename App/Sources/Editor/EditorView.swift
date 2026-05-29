@@ -6,12 +6,9 @@ struct EditorView: View {
 
     let document: PlainTextDocument
     let state: EditorState
-    /// When non-nil, this view replaces `splitOrSingleEditor` in the
-    /// editor's content area. The launcher and the inline file
-    /// browser pass their own surfaces through here so the window
-    /// keeps its toolbar, status bar, and keyboard accessory — the
-    /// alternate UI shows up *inside* the text-view region rather
-    /// than taking over the entire tab.
+    /// Replaces `splitOrSingleEditor` while keeping the surrounding
+    /// chrome (toolbar / status bar / accessory). Launcher + inline
+    /// file browser use this so they show *inside* the tab.
     let tabContentOverride: AnyView?
 
     init(document: PlainTextDocument, state: EditorState, tabContentOverride: AnyView? = nil) {
@@ -22,35 +19,26 @@ struct EditorView: View {
 
     @Bindable private var bus = AppStateBus.shared
     @Environment(\.openWindow) private var openWindow
-    /// Read straight from `@AppStorage` (not the per-window mirror)
-    /// so View ▸ Show Toolbar toggles every window, not just the
-    /// one that was active when the user flipped it.
+    /// Read direct from `@AppStorage` so View ▸ Show Toolbar reaches every
+    /// window, not just the one that was active when the flag flipped.
     @AppStorage(AppPreferenceKey.showToolbar) private var showToolbarPref: Bool = true
-    /// Synced into `state.themeName` via `.onChange` so a Settings
-    /// change reaches every open scene, not just newly-spawned ones.
+    /// `.onChange` syncs into `state.themeName` so Settings reaches every
+    /// open scene, not only newly-spawned ones.
     @AppStorage(AppPreferenceKey.themeName) private var themeNamePref: String = AppThemeName.automatic.rawValue
     @AppStorage(AppPreferenceKey.fontSize) private var fontSizePref: Double = 14
     @AppStorage(AppPreferenceKey.fontName) private var fontNamePref: String = EditorFont.systemMono.rawValue
     var body: some View {
         observeStateForEngineUpdates()
-        // Editor ignores the keyboard safe area and lets UITextView's
-        // own contentInset scroll the cursor into view — the trick
-        // Notes / Mail / Safari use. The status bar is a separate
-        // ZStack layer that respects the keyboard safe area, so
-        // SwiftUI auto-lifts it above the keyboard without resizing
-        // the editor.
-        //
-        // The earlier VStack + bottom-padding design lifted the
-        // entire stack by keyboard height and visibly squashed the
-        // editor on iPad portrait.
+        // Editor ignores keyboard safe area; UITextView's own contentInset
+        // scrolls the cursor in. Status bar is a separate ZStack layer
+        // that DOES respect keyboard safe area, so SwiftUI lifts only it.
+        // VStack + bottom-padding had visibly squashed the editor on iPad
+        // portrait.
         return ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                // Snap between launcher and editor with no transition.
-                // The kind-flip path used to wrap this in a fade + scale,
-                // but on iPhone the surrounding layout (nav title, accessory
-                // bar, keyboard animations) stacked with it produced a
-                // noticeably janky in-animation when a new tab was created.
-                // The kind-flip itself is now visually instant.
+                // No transition between launcher and editor: nav title +
+                // accessory bar + keyboard animations made the kind-flip
+                // visibly janky on iPhone when a new tab was created.
                 Group {
                     if let override = tabContentOverride {
                         override
@@ -66,9 +54,8 @@ struct EditorView: View {
                 EditorStatusBar(document: document, state: state)
             }
         }
-        // CotEditor-style side inspector — slides in non-modally so
-        // the editor stays editable while the user browses metadata
-        // or jumps through the outline. Triggered by the ⓘ button.
+        // Non-modal so the editor stays editable while the user browses
+        // metadata or the outline.
         .inspector(isPresented: Binding(
             get: { state.inspectorOpen },
             set: { state.inspectorOpen = $0 }
@@ -76,13 +63,11 @@ struct EditorView: View {
             InfoInspectorSheet(document: document, state: state, onJump: { goToLine($0) })
                 .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
         }
-        // Covers the editor while a load is in flight so the user
-        // can't type into a buffer that's about to be replaced.
+        // Blocks typing into a buffer that's about to be replaced.
         .overlay {
             if document.isLoading { loadingOverlay }
         }
-        // Gate sheets/pickers on isActive so the shared bus flag only
-        // surfaces them on the focused window.
+        // isActive gate: shared bus flag surfaces only on the focused window.
         .sheet(item: isActive ? $bus.editing.presentedSheet : .constant(nil)) { sheet in
             sheetContent(for: sheet)
         }
@@ -95,13 +80,9 @@ struct EditorView: View {
         } message: { message in
             Text(message)
         }
-        // `.alert`, not `.confirmationDialog`: on iPad the latter
-        // renders as a popover with an arrow tail pointing back at
-        // whatever close control fired it. Close paths here come
-        // from disparate places (tab strip, switcher, ⌘W, palette)
-        // and no single anchor makes sense. The pending record
-        // carries its source session id so discard / save still
-        // target the right window when focus shifts mid-prompt.
+        // `.alert` not `.confirmationDialog`: iPad popover-with-tail needs
+        // an anchor, and close paths come from disparate places (tab
+        // strip, switcher, ⌘W, palette) with no single sensible anchor.
         .alert(
             "Close \(bus.editing.pendingClose?.displayName ?? "tab")?",
             isPresented: pendingCloseBinding,
@@ -128,19 +109,17 @@ struct EditorView: View {
                  ? "This document is untitled. Save it to a file, keep it as an unsaved draft, or discard the contents."
                  : "This document has unsaved changes since its last save.")
         }
-        // Stale-source safeguards. Three flavors, one alert. Wrapped
-        // in a ViewModifier so the body's modifier chain stays under
-        // the Swift type-checker's expression budget.
+        // Three stale-source flavors, one alert. ViewModifier extraction
+        // keeps the body's modifier chain under the type-checker budget.
         .modifier(StaleSourceAlertModifier(
             title: staleAlertTitle,
             presented: staleCheckBinding,
             check: bus.editing.sourceStaleCheck,
             cancel: { bus.editing.sourceStaleCheck = nil }
         ))
-        // Batch close confirmation. Triggered by "Close Other Tabs",
-        // "Close Tabs to the Right", "Close All Tabs" when at least
-        // one of the tabs in the closing set has unsaved changes.
-        // Same modifier-extraction reason as the stale-source alert.
+        // Fires for Close Other / Close to Right / Close All when at least
+        // one tab in the set is dirty. Extracted for same type-checker
+        // reason as the stale alert.
         .modifier(BatchCloseAlertModifier(
             presented: pendingBatchCloseBinding,
             pending: bus.editing.pendingBatchClose,
@@ -153,23 +132,19 @@ struct EditorView: View {
                 AppStateBus.shared.scenes.registerSession(session)
             }
         }
-        // No matching `.onDisappear` to clear `currentEditor` —
-        // SwiftUI fires onDisappear on any focus loss (palette,
-        // preferences, multitasking swipe), which left the menu bar
-        // dimmed despite a live editor behind another window.
-        // `currentEditor` is `weak`, so it nils when the
-        // `EditorState` is actually deallocated.
+        // No matching .onDisappear: SwiftUI fires it on any focus loss
+        // (palette / preferences / multitasking swipe), which dimmed the
+        // menu bar despite a live editor behind another window.
+        // `currentEditor` is weak — nils on EditorState dealloc.
         .onChange(of: state.fileEncoding) { _, newValue in document.fileEncoding = newValue }
         .onChange(of: state.lineEnding)   { _, newValue in document.lineEnding = newValue }
         .onChange(of: themeNamePref) { _, raw in
-            // Per-window override wins — info-inspector pick must
-            // outrank global Settings.
+            // Per-window override (info inspector) outranks Settings.
             guard state.themeOverride == nil else { return }
             state.themeName = AppThemeName(stored: raw)
         }
         .onChange(of: fontSizePref) { _, newValue in
-            // Stepper writes 9–96; ignore 0 in case UserDefaults
-            // returns 0 mid-write.
+            // Ignore 0 in case UserDefaults returns 0 mid-write.
             guard state.fontSizeOverride == nil else { return }
             if newValue > 0 { state.fontSize = newValue }
         }
@@ -177,22 +152,18 @@ struct EditorView: View {
             guard state.fontOverride == nil else { return }
             state.font = EditorFont(stored: newRaw)
         }
-        // Push Settings changes into the live state — without these,
-        // toggling a preference on an already-open tab leaves the
-        // engine running with the old value until the tab is closed
-        // and reopened. Packaged in a modifier to keep the body's
-        // `.onChange` chain short enough for the type checker.
+        // Settings → live state. Without this, prefs only land on freshly
+        // opened tabs. Extracted to a modifier to keep this body's
+        // .onChange chain inside the type-checker budget.
         .modifier(EditorPrefSync(state: state))
-        // Watching `bufferRevision` (a UInt64 bumped per edit) is
-        // O(1); watching `document.text` cascades a 1 MB+ String
-        // through SwiftUI's observation graph on every keystroke —
-        // the McCartney-file freeze.
+        // `bufferRevision` is a UInt64 bumped per edit — O(1) to observe.
+        // Watching `document.text` would cascade the whole String through
+        // the observation graph per keystroke (the McCartney-file freeze).
         .onChange(of: document.bufferRevision) { _, _ in
             scheduleAutoSave()
             scheduleLiveSpellCheckIfEnabled()
         }
-        // Toggling live spell check repaints / clears immediately
-        // so the user sees the change without typing another key.
+        // Repaint/clear immediately so the user sees the toggle take.
         .onChange(of: state.spellCheck) { _, isOn in
             if isOn {
                 state.textView?.highlightAllMisspellings()
@@ -202,13 +173,9 @@ struct EditorView: View {
                 state.textView?.clearMisspellingHighlights()
             }
         }
-        // Tap-to-suggest on Highlight All Misspellings results: when
-        // the caret JUST entered a highlighted misspelling range (and
-        // wasn't already in the same range — guard against arrow-key
-        // movement WITHIN a word repeatedly opening the sheet),
-        // present the walk-through with that word as the first hit.
-        // Only when no other sheet is up so we don't stomp on user
-        // intent (Find/Replace, palette, etc.).
+        // Tap-to-suggest on a highlighted misspelling: only fire when the
+        // caret crosses INTO a new misspelling range, never on arrow-key
+        // movement within the same word, never while another sheet is up.
         .onChange(of: state.selectedRange) { oldValue, newValue in
             guard newValue.length == 0,
                   AppStateBus.shared.editing.presentedSheet == nil,
@@ -218,24 +185,20 @@ struct EditorView: View {
             else { return }
             CommandActions.presentSpellCheckSheet()
         }
-        // Wholesale text replacements (load / revert / restore)
-        // come in through `document.text`; the engine's
-        // `updateUIView` catches those via its `lastPushedDocumentText`
-        // cache and pushes them — nothing else needs to observe.
+        // Load / revert / restore flow through document.text; the engine's
+        // updateUIView picks them up via lastPushedDocumentText.
         .navigationTitle(documentTitle)
         .navigationSubtitle(documentSubtitle)
         .navigationBarTitleDisplayMode(.inline)
-        // iPad hides the system nav bar in favour of the custom
-        // WindowToolbar pill; iPhone keeps the system bar — that's
-        // where the filename lives.
+        // iPad swaps the system nav bar for the WindowToolbar pill;
+        // iPhone keeps the system bar (where the filename lives).
         .toolbar(
             (DeviceIdiom.supportsMultipleWindows && showToolbarPref) ? .hidden : .visible,
             for: .navigationBar
         )
         .toolbar {
-            // iPhone-only nav bar: gear, file (leading) — undo,
-            // palette (trailing). Same-placement items render in
-            // declaration order.
+            // iPhone nav bar: gear, file (leading); undo, palette
+            // (trailing). Same-placement items render in declaration order.
             if DeviceIdiom.isPhone {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -280,15 +243,13 @@ struct EditorView: View {
         }
     }
 
-    /// Foreground in a multi-window session. Gates sheets / pickers
-    /// so a shared bus flag only fires on the focused window.
+    /// Gates sheets/pickers so a shared bus flag fires on focused window only.
     private var isActive: Bool {
         bus.scenes.currentEditor === state
     }
 
-    /// Matches the pending close's session id against this scene's
-    /// session so the dialog fires on the right window across
-    /// focus shifts.
+    /// Match by session id so the dialog fires on the originating window
+    /// even when focus has shifted by the time the user answers.
     private var pendingCloseBinding: Binding<Bool> {
         Binding(
             get: {
@@ -297,8 +258,7 @@ struct EditorView: View {
                     session.tabs.contains { $0.state === state }
                 }
                 // Registry-stale fallback: show on active rather than
-                // silently drop — this is the "don't lose user data"
-                // path.
+                // silently drop (the don't-lose-user-data path).
                 guard let mySession else { return isActive }
                 return ObjectIdentifier(mySession) == pending.sessionID
             },
@@ -308,8 +268,7 @@ struct EditorView: View {
         )
     }
 
-    /// Single-presenter gate so the batch close alert only renders
-    /// in the window that owns the tabs being closed.
+    /// Renders the alert only in the window that owns the closing tabs.
     private var pendingBatchCloseBinding: Binding<Bool> {
         Binding(
             get: {
@@ -332,8 +291,7 @@ struct EditorView: View {
         return "\(scope). \(suffix) Save to Drafts keeps the edits in the unsaved-drafts list so you can pick them up later; Discard throws them away."
     }
 
-    /// Only the scene that owns the stale tab presents — otherwise
-    /// every open window would stack the same alert.
+    /// Only the owning scene presents — otherwise every window stacks it.
     private var staleCheckBinding: Binding<Bool> {
         Binding(
             get: {
@@ -373,15 +331,12 @@ struct EditorView: View {
         )
     }
 
-    /// The unsaved indicator lives in the subtitle so the title
-    /// itself stays uncluttered.
     private var documentTitle: String {
         document.displayName
     }
 
-    /// "edited" hint + file-location breadcrumb, middle-dot joined.
-    /// A brand-new Untitled doc with no edits is NOT "edited" —
-    /// the indicator only appears once `isDirty` flips.
+    /// "edited" hint + location, middle-dot joined. Brand-new Untitled
+    /// with no edits is NOT "edited"; only flips once `isDirty` does.
     private var documentSubtitle: String {
         let unsaved = document.isDirty
         let location: String = document.fileURL.map { DocumentLocation.describe(parentOf: $0) } ?? ""
@@ -393,14 +348,13 @@ struct EditorView: View {
         }
     }
 
-    /// `updateUIView` only fires when SwiftUI re-evaluates this body,
-    /// which only happens when an `@Observable` is read *here*.
-    /// Touching every engine-relevant property forces propagation.
+    /// updateUIView only fires when SwiftUI re-evaluates THIS body, which
+    /// only happens when an @Observable is read here. Touch every engine-
+    /// relevant property to force propagation.
     ///
-    /// Do NOT touch `document.bufferRevision` — it bumps per keystroke
-    /// and would re-introduce the per-keystroke body re-eval cost.
-    /// `document.text` is safe: it only changes on load / revert /
-    /// restore and on the 300 ms debounced snapshot after typing stops.
+    /// Do NOT add `document.bufferRevision` — per-keystroke body re-eval
+    /// is exactly the cost we're avoiding. `document.text` is safe: only
+    /// changes on load / revert / restore + 300 ms debounced snapshot.
     private func observeStateForEngineUpdates() {
         _ = document.text  // load / revert / restore pushes
         _ = state.languageIdentifier
@@ -438,8 +392,8 @@ struct EditorView: View {
 
     private func primeStateFromDocument() {
         state.text = document.text
-        // Diff-gutter baseline. Save flows also rewrite this so the
-        // gutter resets after a successful write.
+        // Diff-gutter baseline. Save flows rewrite this so the gutter
+        // resets after a successful write.
         state.savedBaselineText = document.text
         state.fileEncoding = document.fileEncoding
         state.lineEnding = document.lineEnding
@@ -447,9 +401,9 @@ struct EditorView: View {
         if let url = document.fileURL {
             state.languageIdentifier = LanguageRegistry.identifier(for: url)
         }
-        // Background tabs miss `.onChange(of:)` while they're not
-        // mounted — re-seed from defaults on each appear unless the
-        // user set a per-window override.
+        // Background tabs miss `.onChange(of:)` while unmounted —
+        // re-seed from defaults on appear unless user set a per-window
+        // override.
         let d = UserDefaults.standard
         if state.themeOverride == nil {
             state.themeName = AppThemeName(stored: d.string(forKey: AppPreferenceKey.themeName))
@@ -461,8 +415,7 @@ struct EditorView: View {
             let stored = d.double(forKey: AppPreferenceKey.fontSize)
             state.fontSize = stored > 0 ? stored : 14
         }
-        // Weak captures: closures stored on `state` would otherwise
-        // form an ARC cycle.
+        // Weak captures: closures stored on `state` would ARC-cycle.
         state.setText = { [weak state, weak document] newText in
             guard state != nil, let document else { return }
             if document.text != newText {
@@ -520,8 +473,7 @@ struct EditorView: View {
     }
 
     private var loadingMessage: String {
-        // For Open-in-new-window, document.fileURL is nil until
-        // applyPayload — fall back to state.fileURL.
+        // Open-in-new-window: document.fileURL is nil until applyPayload.
         let url = document.fileURL ?? state.fileURL
         guard let url else { return "Loading…" }
         let provider = DocumentLocation.describe(parentOf: url)
@@ -548,8 +500,7 @@ struct EditorView: View {
         }
     }
 
-    /// Two editors over the same document in split mode. Pane size
-    /// tracks `state.splitFraction` along the orientation's axis.
+    /// Two editors over the same document; pane size tracks splitFraction.
     @ViewBuilder
     private var splitOrSingleEditor: some View {
         if state.splitOpen, let session = bus.scenes.currentSession,
@@ -583,8 +534,6 @@ struct EditorView: View {
 
     @ViewBuilder
     private func splitDivider(in totalSize: CGFloat, axis: SplitOrientation) -> some View {
-        // Width/height swap with the axis; drag reads from the same
-        // axis so vertical splits track vertical drags.
         Color(.separator)
             .frame(width:  axis == .horizontal ? 6 : nil,
                    height: axis == .vertical   ? 6 : nil)
@@ -609,12 +558,8 @@ struct EditorView: View {
             )
     }
 
-    /// Forces "I'm the foreground scene" on the bus before any
-    /// in-scene button fires a presentation action. Works around
-    /// the iPad Stage Manager + Split View race where scenePhase
-    /// fires late and a sheet would otherwise land on the wrong
-    /// window. Delegates to the shared `SceneRouter` helper so the
-    /// behaviour matches every other chrome surface.
+    /// Beats the iPad Stage Manager / Split View race where scenePhase
+    /// fires late and the sheet would land on the wrong window.
     private func claimFocus() {
         bus.scenes.claimFocus(state: state)
     }
@@ -624,8 +569,7 @@ struct EditorView: View {
         let registry = CommandRegistry.all()
         let slots = ToolbarConfig.shared.slots
         Menu {
-            // Palette pinned at the top so the affordance is the
-            // same whether the toolbar is on or off.
+            // Palette pinned at top — same affordance with toolbar off.
             Button {
                 claimFocus()
                 CommandActions.presentCommandPalette()
@@ -653,10 +597,9 @@ struct EditorView: View {
         .accessibilityLabel("Toolbar Actions")
     }
 
-    /// ~800 ms after typing stops. URL-backed docs hit `autoSave`
-    /// (write + revision); untitled get `autoSnapshot` (revision
-    /// only — sandbox demands a user-granted location to write).
-    /// `loadAsync` opts out so its text stream doesn't echo back.
+    /// ~800 ms after last edit. URL-backed → autoSave (write+revision);
+    /// untitled → autoSnapshot (revision only, since sandbox demands a
+    /// user-granted location). loadAsync opts out to avoid echoing.
     private func scheduleAutoSave() {
         guard !document.isLoading, document.isDirty else { return }
         state.autoSaveTask?.cancel()
@@ -665,9 +608,8 @@ struct EditorView: View {
             try? await Task.sleep(for: Timing.autoSaveDebounce)
             if Task.isCancelled { return }
             guard let document, document.isDirty else { return }
-            // Pull the engine's live buffer — `document.text` is a
-            // 300 ms snapshot, and one dropped tick would autosave
-            // stale bytes.
+            // Engine live buffer; document.text is a 300 ms snapshot and
+            // one dropped tick would autosave stale bytes.
             if let live = state?.textView?.text {
                 document.text = live
             }
@@ -679,11 +621,8 @@ struct EditorView: View {
         }
     }
 
-    /// Debounced re-paint of misspelling highlights while typing. No-op
-    /// when live spell check is off — the user's audit-style use of
-    /// `Highlight All Misspellings` already covers the off case. The
-    /// 400 ms delay matches autocorrect's "I've stopped typing" feel
-    /// without thrashing the highlight list on every keystroke.
+    /// 400 ms debounce matches autocorrect's "stopped typing" feel
+    /// without thrashing the highlight list per keystroke.
     private func scheduleLiveSpellCheckIfEnabled() {
         guard state.spellCheck, !document.isLoading else { return }
         state.liveSpellTask?.cancel()
@@ -767,9 +706,8 @@ struct EditorView: View {
         case .preferences:
             NavigationStack { PreferencesView() }
         case .tabSwitcher:
-            // EditorScene presents the switcher inline so the editor
-            // frame can morph into the active card via
-            // matchedGeometryEffect.
+            // EditorScene presents the switcher inline so the editor frame
+            // can morph into the active card via matchedGeometryEffect.
             EmptyView()
         case .processLines:
             ProcessLinesSheet()
@@ -796,6 +734,4 @@ struct EditorView: View {
         state.textView?.goToLine(line)
     }
 }
-
-// `EditorPrefSync` lives in its own file now; see EditorPrefSync.swift.
 
