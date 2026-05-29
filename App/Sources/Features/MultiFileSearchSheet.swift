@@ -53,7 +53,6 @@ struct MultiFileSearchSheet: View {
     /// Cursor into `results` for the next per-match prompt; `nil`
     /// when query mode is inactive.
     @State private var queryCursor: Int?
-    /// Footer text after a Replace All or Query session ends.
     @State private var replaceSummary: String?
 
     /// Past ~10k matches the list becomes unwieldy and previews grow
@@ -382,7 +381,6 @@ struct MultiFileSearchSheet: View {
         bus.scenes.openWindow?(.editor)
     }
 
-    /// Wraps in both directions.
     private func stepResult(by delta: Int) {
         guard !results.isEmpty else { return }
         if currentResultIndex < 0 {
@@ -685,9 +683,8 @@ struct MultiFileSearchSheet: View {
 
     // MARK: - Replace
 
-    /// File-backed sources go through `PlainTextDocument.save(to:)`
-    /// so encoding / line endings / revision history are preserved.
-    /// Open tabs pull from the live engine buffer.
+    /// File-backed sources rewrite via atomic Data.write; open tabs flow
+    /// the new text through the live engine buffer then sync the document.
     private func performReplaceAll() {
         let ctx = bus.find.context
         guard !ctx.query.isEmpty else { return }
@@ -832,10 +829,8 @@ struct MultiFileSearchSheet: View {
         return count
     }
 
-    /// Returns `(replacedText, count)`. `query` is expected to equal
-    /// `ctx.query`; it stays a parameter so callers don't have to
-    /// rewrite the context, but the regex/whole-word wrapping uses
-    /// the context.
+    /// `query` mirrors `ctx.query` for caller convenience; regex /
+    /// whole-word handling still flows through the context.
     private func replaceInString(
         _ text: String,
         query: String,
@@ -861,7 +856,6 @@ struct MultiFileSearchSheet: View {
             let count = regex.replaceMatches(in: mutable, options: [], range: fullRange, withTemplate: replacement)
             return (mutable as String, count)
         } else {
-            // Literal replace.
             var opts: NSString.CompareOptions = []
             if !ctx.caseSensitive { opts.insert(.caseInsensitive) }
             if limitToFirst {
